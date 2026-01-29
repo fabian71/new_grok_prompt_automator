@@ -920,10 +920,13 @@
             actualIndex = promptIndex;
         } else if (automationState.mode === 'image-to-video') {
             actualIndex = automationState.currentImageIndex;
-        } else {
-            // Para modo texto, usar processedVideoUrls.size - 1
+        } else if (automationState.mode === 'video') {
+            // Para modo vídeo, usar processedVideoUrls.size - 1
             // processedVideoUrls é incrementado imediatamente no detection
             actualIndex = Math.max(0, automationState.processedVideoUrls.size - 1);
+        } else {
+            // Para modo imagem, usar currentIndex - 1
+            actualIndex = Math.max(0, automationState.currentIndex - 1);
         }
         
         // Garantir que índice nunca seja negativo
@@ -2144,7 +2147,9 @@
                 if (topMostItem) {
                     // Calculate download delay: delay - 8 seconds, minimum 5 seconds
                     const downloadDelay = Math.max(5, automationState.delay - 8) * 1000;
-                    console.log(`⏱️ Aguardando ${downloadDelay / 1000}s antes de iniciar verificação da imagem...`);
+                    // Capturar o índice atual no momento de criar o timeout
+                    const capturedImageIndex = automationState.currentIndex;
+                    console.log(`⏱️ Aguardando ${downloadDelay / 1000}s antes de iniciar verificação da imagem (índice: ${capturedImageIndex})...`);
 
                     setTimeout(() => {
                         if (!automationState.isRunning) return;
@@ -2186,15 +2191,15 @@
                         if (initialCheck.valid) {
                             // Imagem já está pronta
                             automationState.imageDownloadInitiated = true;
-                            console.log(`✅ Imagem final detectada imediatamente (${initialCheck.sizeKB.toFixed(1)}KB). Baixando...`);
+                            console.log(`✅ Imagem final detectada imediatamente (${initialCheck.sizeKB.toFixed(1)}KB). Baixando índice ${capturedImageIndex}...`);
                             topMostItem.dataset.gpaImageProcessed = 'true';
-                            triggerDownload(initialCheck.src, 'image');
+                            triggerDownload(initialCheck.src, 'image', capturedImageIndex);
                             return;
                         }
                         
                         // Se for placeholder, iniciar polling
                         if (initialCheck.isPlaceholder) {
-                            console.log(`⏳ Placeholder detectado (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling até imagem final estar pronta...`);
+                            console.log(`⏳ Placeholder detectado (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling até imagem final estar pronta (índice: ${capturedImageIndex})...`);
                             
                             let attempts = 0;
                             const maxAttempts = 60; // 30 segundos (500ms * 60)
@@ -2212,9 +2217,9 @@
                                 if (check.valid) {
                                     clearInterval(pollInterval);
                                     automationState.imageDownloadInitiated = true;
-                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando...`);
+                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando índice ${capturedImageIndex}...`);
                                     topMostItem.dataset.gpaImageProcessed = 'true';
-                                    triggerDownload(check.src, 'image');
+                                    triggerDownload(check.src, 'image', capturedImageIndex);
                                     return;
                                 }
                                 
@@ -2225,7 +2230,7 @@
                                     if (lastCheck.src && lastCheck.sizeKB > 0) {
                                         automationState.imageDownloadInitiated = true;
                                         topMostItem.dataset.gpaImageProcessed = 'true';
-                                        triggerDownload(lastCheck.src, 'image');
+                                        triggerDownload(lastCheck.src, 'image', capturedImageIndex);
                                     }
                                     return;
                                 }
@@ -2237,7 +2242,7 @@
                             }, 500);
                         } else if (!initialCheck.isPlaceholder && !initialCheck.valid) {
                             // JPEG/WEBP pequeno demais, iniciar polling também
-                            console.log(`⏳ Imagem JPEG/WEBP muito pequena (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling...`);
+                            console.log(`⏳ Imagem JPEG/WEBP muito pequena (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling (índice: ${capturedImageIndex})...`);
                             
                             let attempts = 0;
                             const maxAttempts = 60;
@@ -2255,9 +2260,9 @@
                                 if (check.valid) {
                                     clearInterval(pollInterval);
                                     automationState.imageDownloadInitiated = true;
-                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando...`);
+                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando índice ${capturedImageIndex}...`);
                                     topMostItem.dataset.gpaImageProcessed = 'true';
-                                    triggerDownload(check.src, 'image');
+                                    triggerDownload(check.src, 'image', capturedImageIndex);
                                     return;
                                 }
                                 
@@ -2268,7 +2273,7 @@
                                     if (lastCheck.src && (lastCheck.isJpeg || lastCheck.isWebp)) {
                                         automationState.imageDownloadInitiated = true;
                                         topMostItem.dataset.gpaImageProcessed = 'true';
-                                        triggerDownload(lastCheck.src, 'image');
+                                        triggerDownload(lastCheck.src, 'image', capturedImageIndex);
                                     }
                                 }
                             }, 500);
