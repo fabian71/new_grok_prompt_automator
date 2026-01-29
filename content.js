@@ -1578,45 +1578,64 @@
         
         const possibleValues = durationMap[targetDuration] || [targetDuration];
         
-        // Find trigger button (usually shows current duration)
-        const buttons = findAllElements('button');
-        let durationTrigger = null;
+        console.log(`🎯 Selecionando duração: ${targetDuration}`);
         
-        for (const btn of buttons) {
-            const text = normalizeText(btn.textContent);
-            // Look for patterns like "6s", "duration", etc
-            if (/\d+s|duration|duracao|duración/i.test(text)) {
-                durationTrigger = btn;
+        // Abrir o menu de modelo clicando no trigger
+        const trigger = document.getElementById('model-select-trigger');
+        if (!trigger) {
+            console.warn('⚠️ Trigger de modelo não encontrado');
+            return false;
+        }
+        
+        console.log('🔔 Abrindo menu de modelo...');
+        forceClick(trigger);
+        await sleep(800);
+        
+        // A duração está no menu de modelo, dentro de um menuitem com botões
+        // Estrutura: <div role="menuitem"><p>Duração do Vídeo</p><div><button>6s</button><button>10s</button></div></div>
+        
+        // Procurar o menuitem que contém "Duração"
+        const menuItems = findAllElements('[role="menuitem"]');
+        let durationMenuItem = null;
+        
+        for (const item of menuItems) {
+            const itemText = normalizeText(item.textContent);
+            if (/duracao|duration|duración/i.test(itemText)) {
+                durationMenuItem = item;
+                console.log('🎯 Menu item de duração encontrado:', itemText.substring(0, 50));
                 break;
             }
         }
         
-        if (!durationTrigger) {
-            console.warn('⚠️ Botão de duração não encontrado');
+        if (!durationMenuItem) {
+            console.warn('⚠️ Menu de duração não encontrado no menu aberto');
+            // Fechar menu clicando fora
+            document.body.click();
             return false;
         }
         
-        console.log('🎯 Abrindo menu de duração...');
-        forceClick(durationTrigger);
-        await sleep(800);
+        // Procurar botões dentro do menuitem de duração
+        const durationButtons = durationMenuItem.querySelectorAll('button');
+        console.log(`🔍 ${durationButtons.length} botões de duração encontrados`);
         
-        // Find and click the target duration
-        const menuItems = findAllElements('[role="menuitem"]');
-        
-        for (const item of menuItems) {
-            const itemText = normalizeText(item.textContent);
+        for (const btn of durationButtons) {
+            const btnText = normalizeText(btn.textContent);
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            console.log(`  - Botão: "${btnText}" (aria-label: "${ariaLabel}")`);
             
             for (const val of possibleValues) {
-                if (itemText.includes(val.toLowerCase())) {
+                if (btnText.includes(val.toLowerCase()) || ariaLabel.includes(val)) {
                     console.log(`✅ Duração ${targetDuration} encontrada, clicando...`);
-                    forceClick(item);
+                    forceClick(btn);
                     await sleep(500);
                     return true;
                 }
             }
         }
         
-        console.warn(`⚠️ Duração ${targetDuration} não encontrada no menu`);
+        console.warn(`⚠️ Duração ${targetDuration} não encontrada entre os botões`);
+        // Fechar menu clicando fora
+        document.body.click();
         return false;
     }
 
