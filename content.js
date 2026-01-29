@@ -740,9 +740,20 @@
     async function selectGenerationMode(mode) {
         console.log(`🎯 Tentando selecionar modo: ${mode}`);
 
-        const trigger = document.getElementById('model-select-trigger');
+        // Aguardar o botão aparecer (página pode estar carregando)
+        let trigger = null;
+        let attempts = 0;
+        while (!trigger && attempts < 10) {
+            trigger = document.getElementById('model-select-trigger');
+            if (!trigger) {
+                console.log(`⏳ Aguardando botão model-select-trigger... tentativa ${attempts + 1}/10`);
+                await sleep(500);
+                attempts++;
+            }
+        }
+        
         if (!trigger) {
-            console.warn('❌ Botão model-select-trigger não encontrado.');
+            console.warn('❌ Botão model-select-trigger não encontrado após 10 tentativas.');
             return false;
         }
 
@@ -1647,8 +1658,10 @@
 
         // Check if we're on a post page - redirect to /imagine if so
         const isPostPage = window.location.pathname.includes('/imagine/post/');
-        if (isPostPage) {
-            console.log('🔄 Detectada página de post, redirecionando para /imagine...');
+        const hasTrigger = document.getElementById('model-select-trigger');
+        
+        if (isPostPage || !hasTrigger) {
+            console.log(`🔄 Redirecionando para /imagine... (isPostPage=${isPostPage}, hasTrigger=${!!hasTrigger})`);
             await saveAutomationState();
             window.location.href = 'https://grok.com/imagine';
             return;
