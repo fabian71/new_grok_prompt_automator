@@ -31,6 +31,7 @@
         downloadedVideos: new Set(),
         processedVideoUrls: new Set(),
         imageDownloadInitiated: false,
+        imagesDownloadedCount: 0,
         lastPromptSentIndex: -1,
         restoredFromReload: false,
         promptsSinceLastBreak: 0,
@@ -1347,6 +1348,7 @@
             
             automationState.currentIndex++;
             automationState.promptsSinceLastBreak++;
+            automationState.imagesDownloadedCount = 0; // Reset contador de imagens baixadas
             saveAutomationState(); // Persist progress immediately
 
             if (automationState.isRunning && automationState.currentIndex < automationState.prompts.length) {
@@ -2205,7 +2207,7 @@
         
         // Verificar se já atingimos o limite de downloads para este prompt
         const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
-        const alreadyDownloaded = parseInt(item.dataset.gpaImagesDownloadedCount || '0');
+        const alreadyDownloaded = automationState.imagesDownloadedCount || 0;
         if (alreadyDownloaded >= maxImagesPerPrompt) {
             console.log(`✅ Limite de ${maxImagesPerPrompt} imagens já atingido para este prompt.`);
             isDownloadingAllImages = false;
@@ -2213,9 +2215,6 @@
         }
         
         console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
-        
-        // Baixar apenas as imagens do prompt atual
-        let downloadedCount = alreadyDownloaded;
         
         // Processar itens na ordem do DOM
         for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
@@ -2230,7 +2229,7 @@
                 
                 console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
                 item.dataset.gpaAllImagesProcessed = 'true';
-                item.dataset.gpaImagesDownloadedCount = String(downloadedCount + 1);
+                automationState.imagesDownloadedCount = downloadedCount + 1;
                 
                 // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
                 // Temporariamente modificar o prompt para incluir número da imagem
