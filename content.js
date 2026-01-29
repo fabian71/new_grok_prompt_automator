@@ -2150,13 +2150,23 @@
         isDownloadingAllImages = true;
         
         try {
+        // Obter o índice do prompt atual (o que acabou de ser processado)
+        const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
+        const currentPrompt = automationState.prompts[currentPromptIdx];
+        
+        if (!currentPrompt) {
+            console.log('⚠️ Prompt atual não encontrado, cancelando download...');
+            isDownloadingAllImages = false;
+            return;
+        }
+        
         const allItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-all-images-processed="true"])'));
         if (allItems.length === 0) {
             isDownloadingAllImages = false;
             return;
         }
         
-        console.log(`🖼️ Modo 'Baixar Todas': Verificando ${allItems.length} itens...`);
+        console.log(`🖼️ Modo 'Baixar Todas': Prompt[${currentPromptIdx}] "${currentPrompt.substring(0, 30)}..." - Verificando ${allItems.length} itens...`);
         
         // Função para verificar se a imagem é válida
         function checkImageValid(item) {
@@ -2183,56 +2193,31 @@
             };
         }
         
-        // Os itens já vêm do DOM na ordem de renderização
-        // No Grok, imagens mais recentes aparecem primeiro no DOM
-        // Vamos processar na ordem reversa (mais antigas primeiro) para manter consistência
-        allItems.reverse();
-        
-        // Calcular o índice do primeiro prompt que tem imagens nesta página
-        // Se temos 8 imagens (2 prompts x 4), e currentIndex=2, então:
-        // - Imagens 0-3 = prompt 0
-        // - Imagens 4-7 = prompt 1
-        const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
-        const imagesPerPrompt = 4;
-        
-        // Verificar cada item e baixar os válidos (limite de 12 imagens)
+        // Baixar apenas as imagens do prompt atual (até 4 imagens)
         let downloadedCount = 0;
-        const maxImages = 12;
+        const maxImagesPerPrompt = 4;
         
-        for (let i = 0; i < allItems.length && downloadedCount < maxImages; i++) {
+        // Processar itens na ordem do DOM
+        for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
             const item = allItems[i];
             const check = checkImageValid(item);
             
             if (!check) continue;
             
             if (check.valid) {
-                // Mapeamento: as primeiras 4 imagens no array (depois do reverse) 
-                // pertencem ao prompt 0, próximas 4 ao prompt 1, etc.
-                const promptIndex = Math.floor(i / imagesPerPrompt);
+                const imageNumber = downloadedCount + 1;
+                const promptName = currentPrompt;
                 
-                // Verificar se o índice está dentro dos prompts válidos
-                if (promptIndex >= automationState.prompts.length) {
-                    console.log(`⚠️ Índice ${promptIndex} fora do range de prompts, pulando...`);
-                    continue;
-                }
-                
-                const promptName = automationState.prompts[promptIndex] || `prompt_${promptIndex}`;
-                const imageNumber = (i % imagesPerPrompt) + 1;
-                
-                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB | Prompt[${promptIndex}]: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
+                console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
                 item.dataset.gpaAllImagesProcessed = 'true';
                 
                 // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
-                const originalPrompt = automationState.prompts[promptIndex];
-                if (originalPrompt) {
-                    // Temporariamente modificar o prompt para incluir número da imagem
-                    automationState.prompts[promptIndex] = `${originalPrompt}_${imageNumber}`;
-                    triggerDownload(check.src, 'image', promptIndex);
-                    // Restaurar prompt original
-                    automationState.prompts[promptIndex] = originalPrompt;
-                } else {
-                    triggerDownload(check.src, 'image', promptIndex);
-                }
+                // Temporariamente modificar o prompt para incluir número da imagem
+                const originalPrompt = automationState.prompts[currentPromptIdx];
+                automationState.prompts[currentPromptIdx] = `${originalPrompt}_${imageNumber}`;
+                triggerDownload(check.src, 'image', currentPromptIdx);
+                // Restaurar prompt original
+                automationState.prompts[currentPromptIdx] = originalPrompt;
                 
                 downloadedCount++;
                 
@@ -2246,11 +2231,13 @@
         }
         
         if (downloadedCount > 0) {
-            console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas'`);
+            console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas' do prompt[${currentPromptIdx}]`);
         }
-        if (downloadedCount >= maxImages) {
-            console.log(`⚠️ Limite de ${maxImages} imagens atingido. Parando download.`);
+        if (downloadedCount >= maxImagesPerPrompt) {
+            console.log(`✅ Todas as ${maxImagesPerPrompt} imagens do prompt atual baixadas.`);
         }
+        // Marcar que o download foi iniciado para este prompt
+        automationState.imageDownloadInitiated = true;
         } finally {
             isDownloadingAllImages = false;
         }
