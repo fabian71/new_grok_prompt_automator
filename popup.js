@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const delayInputImage = document.getElementById('delay-input-image'); // Delay para Image-to-Video
     const aspectRatioSelect = document.getElementById('aspect-ratio-select');
     const videoDurationSelect = document.getElementById('video-duration-select');
+    const videoDurationSelectImage = document.getElementById('video-duration-select-image');
     const videoDurationContainer = document.getElementById('video-duration-container');
     const videoDelayWarningImage = document.getElementById('video-delay-warning-image');
     const toggleRandomize = document.getElementById('toggle-randomize');
@@ -80,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             delay: delayInput.value,
             aspectRatio: aspectRatioSelect.value,
             videoDuration: videoDurationSelect ? videoDurationSelect.value : '6s',
+            videoDurationImage: videoDurationSelectImage ? videoDurationSelectImage.value : '6s',
             downloadSubfolder: downloadSubfolderName.value,
             breakPrompts: breakPrompts.value,
             breakMin: breakMin.value,
@@ -139,6 +141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (popupSettings.aspectRatio) aspectRatioSelect.value = popupSettings.aspectRatio;
             if (popupSettings.videoDuration && videoDurationSelect) videoDurationSelect.value = popupSettings.videoDuration;
+            if (popupSettings.videoDurationImage && videoDurationSelectImage) videoDurationSelectImage.value = popupSettings.videoDurationImage;
             if (popupSettings.downloadSubfolder) downloadSubfolderName.value = popupSettings.downloadSubfolder;
             if (popupSettings.breakPrompts) breakPrompts.value = popupSettings.breakPrompts;
             if (popupSettings.breakMin) breakMin.value = popupSettings.breakMin;
@@ -177,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (delayInputImage) delayInputImage.addEventListener('change', saveAllSettings);
     aspectRatioSelect.addEventListener('change', saveAllSettings);
     if (videoDurationSelect) videoDurationSelect.addEventListener('change', saveAllSettings);
+    if (videoDurationSelectImage) videoDurationSelectImage.addEventListener('change', saveAllSettings);
     downloadSubfolderName.addEventListener('change', saveAllSettings);
     breakPrompts.addEventListener('change', saveAllSettings);
     breakMin.addEventListener('change', saveAllSettings);
@@ -829,7 +833,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 aspectRatio: aspectRatioSelect.value,
                 randomizeAspectRatio: toggleRandomize.checked,
                 aspectRatios,
-                videoDuration: videoDurationSelect ? videoDurationSelect.value : null,
+                videoDuration: videoDurationSelectImage ? videoDurationSelectImage.value : (videoDurationSelect ? videoDurationSelect.value : '6s'),
                 autoDownload: autoDownloadCheckbox.checked,
                 downloadSubfolder: downloadSubfolderName.value.trim(),
                 autoUpscale: toggleUpscale.checked,
