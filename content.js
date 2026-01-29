@@ -2216,6 +2216,9 @@
         
         console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
         
+        // Baixar apenas as imagens do prompt atual
+        let downloadedCount = alreadyDownloaded;
+        
         // Processar itens na ordem do DOM
         for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
             const item = allItems[i];
