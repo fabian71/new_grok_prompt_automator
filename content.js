@@ -2147,8 +2147,9 @@
                 if (topMostItem) {
                     // Calculate download delay: delay - 8 seconds, minimum 5 seconds
                     const downloadDelay = Math.max(5, automationState.delay - 8) * 1000;
-                    // Capturar o índice atual no momento de criar o timeout
-                    const capturedImageIndex = automationState.currentIndex;
+                    // No modo imagem, quando o download é acionado, o currentIndex já foi incrementado
+                    // Então usamos currentIndex - 1 para pegar o prompt correto
+                    const capturedImageIndex = Math.max(0, automationState.currentIndex - 1);
                     console.log(`⏱️ Aguardando ${downloadDelay / 1000}s antes de iniciar verificação da imagem (índice: ${capturedImageIndex})...`);
 
                     setTimeout(() => {
