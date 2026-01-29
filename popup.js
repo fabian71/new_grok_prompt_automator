@@ -63,6 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const autoDownloadPromptCheckbox = document.getElementById('auto-download-prompt-checkbox');
     const downloadAllImagesCheckbox = document.getElementById('download-all-images-checkbox');
     const downloadAllImagesContainer = document.getElementById('download-all-images-container');
+    const downloadMultiCountContainer = document.getElementById('download-multi-count-container');
+    const downloadMultiCount = document.getElementById('download-multi-count');
     const downloadSubfolderName = document.getElementById('downloadSubfolderName');
     const saveDownloadFolder = document.getElementById('saveDownloadFolder');
     const downloadFolderStatus = document.getElementById('downloadFolderStatus');
@@ -95,6 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             autoDownload: autoDownloadCheckbox.checked,
             savePromptTxt: autoDownloadPromptCheckbox ? autoDownloadPromptCheckbox.checked : false,
             downloadAllImages: downloadAllImagesCheckbox ? downloadAllImagesCheckbox.checked : false,
+            downloadMultiCount: downloadMultiCount ? parseInt(downloadMultiCount.value) : 4,
             autoUpscale: toggleUpscale.checked,
 
             // Inputs
@@ -143,6 +146,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (popupSettings.downloadAllImages !== undefined && downloadAllImagesCheckbox) {
                 downloadAllImagesCheckbox.checked = popupSettings.downloadAllImages;
+            }
+
+            if (popupSettings.downloadMultiCount !== undefined && downloadMultiCount) {
+                downloadMultiCount.value = popupSettings.downloadMultiCount;
             }
 
             if (popupSettings.autoUpscale !== undefined) {
@@ -617,6 +624,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadAllImagesCheckbox.addEventListener('change', async () => {
             await chrome.storage.local.set({ downloadAllImages: downloadAllImagesCheckbox.checked });
             console.log('🖼️ downloadAllImages salvo:', downloadAllImagesCheckbox.checked);
+            
+            // Mostrar/esconder selectbox de quantidade
+            if (downloadMultiCountContainer) {
+                const mode = document.querySelector('input[name="generation-mode"]:checked')?.value || 'video';
+                downloadMultiCountContainer.style.display = (downloadAllImagesCheckbox.checked && mode === 'image') ? 'block' : 'none';
+            }
+            
+            saveAllSettings();
+        });
+    }
+    
+    // Save downloadMultiCount immediately when changed
+    if (downloadMultiCount) {
+        downloadMultiCount.addEventListener('change', async () => {
+            await chrome.storage.local.set({ downloadMultiCount: parseInt(downloadMultiCount.value) });
+            console.log('🖼️ downloadMultiCount salvo:', downloadMultiCount.value);
             saveAllSettings();
         });
     }
@@ -633,11 +656,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             autoDownloadOptions.style.display = isChecked ? 'block' : 'none';
         }
         
-        // Atualizar visibilidade específica do "Baixar Todas" baseado no modo
+        // Atualizar visibilidade específica do "Baixar várias" baseado no modo
         if (downloadAllImagesContainer) {
             downloadAllImagesContainer.style.display = (isChecked && mode === 'image') ? 'flex' : 'none';
         }
         
+        // Mostrar/esconder selectbox de quantidade
+        if (downloadMultiCountContainer) {
+            downloadMultiCountContainer.style.display = (isChecked && mode === 'image' && downloadAllImagesCheckbox?.checked) ? 'block' : 'none';
+        }
 
     }
     
@@ -695,6 +722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoDownload: autoDownloadCheckbox.checked,
                 savePromptTxt: autoDownloadPromptCheckbox ? autoDownloadPromptCheckbox.checked : false,
                 downloadAllImages: downloadAllImagesCheckbox ? downloadAllImagesCheckbox.checked : false,
+                downloadMultiCount: downloadMultiCount ? parseInt(downloadMultiCount.value) : 4,
                 downloadSubfolder: downloadSubfolderName.value.trim(),
                 autoUpscale: toggleUpscale.checked,
                 breakEnabled: toggleBreak.checked,

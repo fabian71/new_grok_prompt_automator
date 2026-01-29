@@ -1905,6 +1905,7 @@
                 upscale: config.autoUpscale || false,
                 autoDownload: config.autoDownload || false,
                 downloadAllImages: config.downloadAllImages || false,
+                downloadMultiCount: config.downloadMultiCount || 4,
                 breakEnabled: config.breakEnabled || false,
                 breakPrompts: config.breakPrompts || 90,
                 breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3)
@@ -2202,9 +2203,10 @@
             };
         }
         
-        // Baixar apenas as imagens do prompt atual (até 4 imagens)
+        // Baixar apenas as imagens do prompt atual (usar valor configurado ou padrão 4)
         let downloadedCount = 0;
-        const maxImagesPerPrompt = 4;
+        const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
+        console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}`);
         
         // Processar itens na ordem do DOM
         for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
