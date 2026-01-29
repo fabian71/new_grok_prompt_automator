@@ -61,6 +61,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const progressInfo = document.getElementById('progress-info');
     const autoDownloadCheckbox = document.getElementById('auto-download-checkbox');
     const autoDownloadPromptCheckbox = document.getElementById('auto-download-prompt-checkbox');
+    const downloadAllImagesCheckbox = document.getElementById('download-all-images-checkbox');
+    const downloadAllImagesContainer = document.getElementById('download-all-images-container');
     const downloadSubfolderName = document.getElementById('downloadSubfolderName');
     const saveDownloadFolder = document.getElementById('saveDownloadFolder');
     const downloadFolderStatus = document.getElementById('downloadFolderStatus');
@@ -92,6 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleBreak: toggleBreak.checked,
             autoDownload: autoDownloadCheckbox.checked,
             savePromptTxt: autoDownloadPromptCheckbox ? autoDownloadPromptCheckbox.checked : false,
+            downloadAllImages: downloadAllImagesCheckbox ? downloadAllImagesCheckbox.checked : false,
             autoUpscale: toggleUpscale.checked,
 
             // Inputs
@@ -136,6 +139,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (popupSettings.savePromptTxt !== undefined && autoDownloadPromptCheckbox) {
                 autoDownloadPromptCheckbox.checked = popupSettings.savePromptTxt;
+            }
+
+            if (popupSettings.downloadAllImages !== undefined && downloadAllImagesCheckbox) {
+                downloadAllImagesCheckbox.checked = popupSettings.downloadAllImages;
             }
 
             if (popupSettings.autoUpscale !== undefined) {
@@ -513,6 +520,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (videoDurationContainer) {
                 videoDurationContainer.style.display = mode === 'video' ? 'block' : 'none';
             }
+            
+            // Mostrar/esconder opção de baixar todas as imagens (apenas modo imagem)
+            if (downloadAllImagesContainer) {
+                downloadAllImagesContainer.style.display = mode === 'image' ? 'flex' : 'none';
+            }
+            
             // Save mode
             chrome.storage.local.set({ generationMode: mode });
         });
@@ -607,6 +620,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Save downloadAllImages immediately when changed
+    if (downloadAllImagesCheckbox) {
+        downloadAllImagesCheckbox.addEventListener('change', async () => {
+            await chrome.storage.local.set({ downloadAllImages: downloadAllImagesCheckbox.checked });
+            console.log('🖼️ downloadAllImages salvo:', downloadAllImagesCheckbox.checked);
+            saveAllSettings();
+        });
+    }
+
     // Auto download checkbox
     autoDownloadCheckbox.addEventListener('change', () => {
         const delay = parseInt(delayInput.value);
@@ -662,6 +684,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 videoDuration: modeValue === 'video' && videoDurationSelect ? videoDurationSelect.value : null,
                 autoDownload: autoDownloadCheckbox.checked,
                 savePromptTxt: autoDownloadPromptCheckbox ? autoDownloadPromptCheckbox.checked : false,
+                downloadAllImages: downloadAllImagesCheckbox ? downloadAllImagesCheckbox.checked : false,
                 downloadSubfolder: downloadSubfolderName.value.trim(),
                 autoUpscale: toggleUpscale.checked,
                 breakEnabled: toggleBreak.checked,

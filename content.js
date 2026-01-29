@@ -1885,6 +1885,7 @@
                 fixedRatio: config.aspectRatio || '3:2',
                 upscale: config.autoUpscale || false,
                 autoDownload: config.autoDownload || false,
+                downloadAllImages: config.downloadAllImages || false,
                 breakEnabled: config.breakEnabled || false,
                 breakPrompts: config.breakPrompts || 90,
                 breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3)
@@ -2122,6 +2123,74 @@
         return false;
     }
 
+    // Função para baixar todas as imagens válidas de uma vez
+    async function downloadAllImagesFromItems() {
+        if (!automationState.isRunning || !automationState.settings?.downloadAllImages) return;
+        
+        const allItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-all-images-processed="true"])'));
+        if (allItems.length === 0) return;
+        
+        console.log(`🖼️ Modo 'Baixar Todas': Verificando ${allItems.length} itens...`);
+        
+        // Função para verificar se a imagem é válida
+        function checkImageValid(item) {
+            const image = item.querySelector('img[src^="data:image/"]');
+            if (!image || !image.src) return null;
+            
+            const src = image.src;
+            const isPng = src.startsWith('data:image/png');
+            const isJpeg = src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
+            const isWebp = src.startsWith('data:image/webp');
+            
+            const base64Length = src.split(',')[1]?.length || 0;
+            const approxSizeBytes = base64Length * 0.75;
+            const approxSizeKB = approxSizeBytes / 1024;
+            
+            return {
+                valid: (isJpeg || isWebp) && approxSizeKB >= 100,
+                isPlaceholder: isPng,
+                isJpeg,
+                isWebp,
+                sizeKB: approxSizeKB,
+                src: src,
+                item: item
+            };
+        }
+        
+        // Verificar cada item e baixar os válidos
+        let downloadedCount = 0;
+        for (let i = 0; i < allItems.length; i++) {
+            const item = allItems[i];
+            const check = checkImageValid(item);
+            
+            if (!check) continue;
+            
+            if (check.valid) {
+                // Calcular índice do prompt baseado na posição do item
+                // Itens mais recentes estão mais acima (menor valor de top)
+                const itemTop = parseFloat(item.style.top) || 0;
+                const itemIndex = Math.floor(itemTop / 200); // Estimativa baseada na altura típica
+                const promptIndex = Math.min(automationState.prompts.length - 1, Math.max(0, itemIndex));
+                
+                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB (prompt índice: ${promptIndex})`);
+                item.dataset.gpaAllImagesProcessed = 'true';
+                triggerDownload(check.src, 'image', promptIndex);
+                downloadedCount++;
+                
+                // Pequeno delay entre downloads para não sobrecarregar
+                await sleep(300);
+            } else if (check.isPlaceholder) {
+                console.log(`⏳ Item ${i}: Placeholder PNG (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+            } else {
+                console.log(`⏳ Item ${i}: Imagem muito pequena (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+            }
+        }
+        
+        if (downloadedCount > 0) {
+            console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas'`);
+        }
+    }
+
     function handleImageGeneration(mutations) {
         if (!automationState.isRunning) return;
 
@@ -2131,7 +2200,14 @@
         const hasRelevantChanges = mutations.some(m => m.addedNodes.length > 0 || (m.attributeName === 'src'));
         if (!hasRelevantChanges) return;
 
-        // --- New Image Logic (Image Mode) ---
+        // --- Modo Baixar Todas as Imagens ---
+        if (automationState.mode === 'image' && automationState.settings?.downloadAllImages && automationState.settings?.autoDownload) {
+            // Chamar download de todas as imagens
+            downloadAllImagesFromItems();
+            return; // Não executar o modo de imagem única
+        }
+
+        // --- New Image Logic (Image Mode - Apenas última imagem) ---
         if (automationState.mode === 'image' && automationState.settings?.autoDownload && !automationState.imageDownloadInitiated) {
             const unprocessedItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-image-processed="true"])'));
 
