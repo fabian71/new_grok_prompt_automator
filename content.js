@@ -2138,9 +2138,9 @@
                             const approxSizeKB = approxSizeBytes / 1024;
                             
                             // Qualquer PNG é considerado placeholder no Grok
-                            // JPEG/WEBP maior que 30KB é considerado imagem final
+                            // JPEG/WEBP maior que 100KB é considerado imagem final
                             return {
-                                valid: (isJpeg || isWebp) && approxSizeKB >= 30,
+                                valid: (isJpeg || isWebp) && approxSizeKB >= 100,
                                 isPlaceholder: isPng,
                                 isJpeg,
                                 isWebp,
