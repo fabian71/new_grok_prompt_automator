@@ -2157,6 +2157,18 @@
             };
         }
         
+        // Ordenar itens por posição vertical (mais recentes primeiro)
+        allItems.sort((a, b) => {
+            const topA = parseFloat(a.style.top) || Infinity;
+            const topB = parseFloat(b.style.top) || Infinity;
+            return topA - topB;
+        });
+        
+        // Distribuir imagens entre os prompts processados
+        // currentIndex - 1 é o prompt mais recente
+        const totalPromptsProcessed = Math.max(0, automationState.currentIndex - 1);
+        const imagesPerPrompt = 4; // Grok geralmente gera 4 imagens por prompt
+        
         // Verificar cada item e baixar os válidos
         let downloadedCount = 0;
         for (let i = 0; i < allItems.length; i++) {
@@ -2166,15 +2178,33 @@
             if (!check) continue;
             
             if (check.valid) {
-                // Calcular índice do prompt baseado na posição do item
-                // Itens mais recentes estão mais acima (menor valor de top)
-                const itemTop = parseFloat(item.style.top) || 0;
-                const itemIndex = Math.floor(itemTop / 200); // Estimativa baseada na altura típica
-                const promptIndex = Math.min(automationState.prompts.length - 1, Math.max(0, itemIndex));
+                // Calcular qual prompt esta imagem pertence
+                // Distribuição: as primeiras 4 imagens = prompt 0, próximas 4 = prompt 1, etc.
+                const promptIndex = Math.min(
+                    automationState.prompts.length - 1,
+                    Math.floor(i / imagesPerPrompt)
+                );
                 
-                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB (prompt índice: ${promptIndex})`);
+                // Se temos menos prompts que o calculado, usar o último prompt
+                const actualPromptIndex = Math.min(promptIndex, Math.max(0, automationState.currentIndex - 1));
+                const promptName = automationState.prompts[actualPromptIndex] || `prompt_${actualPromptIndex}`;
+                const imageNumber = (i % imagesPerPrompt) + 1;
+                
+                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB | Prompt: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
                 item.dataset.gpaAllImagesProcessed = 'true';
-                triggerDownload(check.src, 'image', promptIndex);
+                
+                // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
+                const originalPrompt = automationState.prompts[actualPromptIndex];
+                if (originalPrompt) {
+                    // Temporariamente modificar o prompt para incluir número da imagem
+                    automationState.prompts[actualPromptIndex] = `${originalPrompt}_${imageNumber}`;
+                    triggerDownload(check.src, 'image', actualPromptIndex);
+                    // Restaurar prompt original
+                    automationState.prompts[actualPromptIndex] = originalPrompt;
+                } else {
+                    triggerDownload(check.src, 'image', actualPromptIndex);
+                }
+                
                 downloadedCount++;
                 
                 // Pequeno delay entre downloads para não sobrecarregar
