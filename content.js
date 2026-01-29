@@ -2204,15 +2204,15 @@
                 item.dataset.gpaAllImagesProcessed = 'true';
                 
                 // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
-                const originalPrompt = automationState.prompts[actualPromptIndex];
+                const originalPrompt = automationState.prompts[promptIndex];
                 if (originalPrompt) {
                     // Temporariamente modificar o prompt para incluir número da imagem
-                    automationState.prompts[actualPromptIndex] = `${originalPrompt}_${imageNumber}`;
-                    triggerDownload(check.src, 'image', actualPromptIndex);
+                    automationState.prompts[promptIndex] = `${originalPrompt}_${imageNumber}`;
+                    triggerDownload(check.src, 'image', promptIndex);
                     // Restaurar prompt original
-                    automationState.prompts[actualPromptIndex] = originalPrompt;
+                    automationState.prompts[promptIndex] = originalPrompt;
                 } else {
-                    triggerDownload(check.src, 'image', actualPromptIndex);
+                    triggerDownload(check.src, 'image', promptIndex);
                 }
                 
                 downloadedCount++;
