@@ -205,7 +205,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     const videoDelayWarning = document.getElementById('video-delay-warning');
-    const imageDelayWarning = document.getElementById('image-delay-warning');
     const imageCountLabel = document.getElementById('image-count-label');
 
     // Tab system
@@ -583,11 +582,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             videoDelayWarning.style.display = 'none';
         }
 
-        if (mode === 'image' && autoDownloadCheckbox.checked && delay < 20) {
-            imageDelayWarning.style.display = 'block';
-        } else {
-            imageDelayWarning.style.display = 'none';
-        }
+
     });
     
     // Delay warning para Image-to-Video
@@ -643,13 +638,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             downloadAllImagesContainer.style.display = (isChecked && mode === 'image') ? 'flex' : 'none';
         }
         
-        // Delay warning
-        const delay = parseInt(delayInput.value);
-        if (mode === 'image' && isChecked && delay < 20) {
-            imageDelayWarning.style.display = 'block';
-        } else {
-            imageDelayWarning.style.display = 'none';
-        }
+
     }
     
     autoDownloadCheckbox.addEventListener('change', updateAutoDownloadOptions);
