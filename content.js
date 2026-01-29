@@ -2136,12 +2136,25 @@
         return false;
     }
 
+    // Flag para evitar downloads duplicados simultâneos
+    let isDownloadingAllImages = false;
+    
     // Função para baixar todas as imagens válidas de uma vez
     async function downloadAllImagesFromItems() {
         if (!automationState.isRunning || !automationState.settings?.downloadAllImages) return;
+        if (isDownloadingAllImages) {
+            console.log('⏳ Download de todas as imagens já em andamento, ignorando...');
+            return;
+        }
         
+        isDownloadingAllImages = true;
+        
+        try {
         const allItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-all-images-processed="true"])'));
-        if (allItems.length === 0) return;
+        if (allItems.length === 0) {
+            isDownloadingAllImages = false;
+            return;
+        }
         
         console.log(`🖼️ Modo 'Baixar Todas': Verificando ${allItems.length} itens...`);
         
@@ -2228,6 +2241,9 @@
         
         if (downloadedCount > 0) {
             console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas'`);
+        }
+        } finally {
+            isDownloadingAllImages = false;
         }
     }
 
