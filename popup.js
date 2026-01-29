@@ -6,35 +6,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('version-badge').textContent = `v${manifest.version}`;
     document.getElementById('version-footer').textContent = `Version ${manifest.version}`;
 
-    // Verificar se há automação realmente rodando
-    // Se não houver, limpar estado visual E storage
+    // Verificar estado da automação no storage
     const { automationActive: isActive } = await chrome.storage.local.get('automationActive');
 
-    // Verificar com o content script se realmente está rodando
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let actuallyRunning = false;
-
-    if (tab && tab.id && tab.url && tab.url.includes('grok.com')) {
-        try {
-            const response = await chrome.tabs.sendMessage(tab.id, { action: 'getStatus' });
-            actuallyRunning = response && response.isRunning;
-        } catch (e) {
-            // Content script não respondeu, não está rodando
-            actuallyRunning = false;
-        }
-    }
-
-    // Se o storage diz que está ativo MAS não está realmente rodando, limpar
-    if (isActive && !actuallyRunning) {
-        console.log('Limpando estado antigo de automação...');
-        await chrome.storage.local.set({
-            automationActive: false,
-            automationConfig: null
-        });
-    }
-
-    if (!actuallyRunning) {
-        // Garantir que UI está em estado inicial
+    // Se não está ativo, garantir que UI está em estado inicial
+    if (!isActive) {
         document.querySelectorAll('[id$="-btn"]').forEach(btn => {
             if (btn.id === 'start-btn' || btn.id === 'reset-btn') {
                 btn.disabled = false;
