@@ -2112,19 +2112,103 @@
                 if (topMostItem) {
                     // Calculate download delay: delay - 8 seconds, minimum 5 seconds
                     const downloadDelay = Math.max(5, automationState.delay - 8) * 1000;
-                    console.log(`⏱️ Aguardando ${downloadDelay / 1000}s antes de iniciar download da imagem...`);
+                    console.log(`⏱️ Aguardando ${downloadDelay / 1000}s antes de iniciar verificação da imagem...`);
 
                     setTimeout(() => {
                         if (!automationState.isRunning) return;
                         if (automationState.imageDownloadInitiated) return;
-                        const playIcon = topMostItem.querySelector('svg.lucide-play');
-                        const image = topMostItem.querySelector('img[src^="data:image/"]');
+                        
+                        // Função para verificar se a imagem é válida
+                        function checkImageValid() {
+                            const playIcon = topMostItem.querySelector('svg.lucide-play');
+                            const image = topMostItem.querySelector('img[src^="data:image/"]');
 
-                        if (playIcon && image && image.src) {
+                            if (!playIcon || !image || !image.src) {
+                                return { valid: false, reason: 'no-image' };
+                            }
+
+                            const src = image.src;
+                            const isPng = src.startsWith('data:image/png');
+                            const isJpeg = src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
+                            const isWebp = src.startsWith('data:image/webp');
+                            
+                            // Calcular tamanho aproximado do base64
+                            const base64Length = src.split(',')[1]?.length || 0;
+                            const approxSizeBytes = base64Length * 0.75;
+                            const approxSizeKB = approxSizeBytes / 1024;
+                            
+                            return {
+                                valid: (isJpeg || isWebp) && approxSizeKB >= 100,
+                                isPlaceholder: isPng && approxSizeKB < 100,
+                                isJpeg,
+                                isWebp,
+                                sizeKB: approxSizeKB,
+                                src: src
+                            };
+                        }
+                        
+                        // Verificação inicial
+                        const initialCheck = checkImageValid();
+                        if (initialCheck.valid) {
+                            // Imagem já está pronta
                             automationState.imageDownloadInitiated = true;
-                            console.log('🖼️ Imagem mais recente detectada (pela posição). Baixando...');
+                            console.log(`✅ Imagem final detectada imediatamente (${initialCheck.sizeKB.toFixed(1)}KB). Baixando...`);
                             topMostItem.dataset.gpaImageProcessed = 'true';
-                            triggerDownload(image.src, 'image');
+                            triggerDownload(initialCheck.src, 'image');
+                            return;
+                        }
+                        
+                        // Se for placeholder, iniciar polling
+                        if (initialCheck.isPlaceholder) {
+                            console.log(`⏳ Placeholder detectado (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling até imagem final estar pronta...`);
+                            
+                            let attempts = 0;
+                            const maxAttempts = 60; // 30 segundos (500ms * 60)
+                            
+                            const pollInterval = setInterval(() => {
+                                attempts++;
+                                
+                                if (!automationState.isRunning || automationState.imageDownloadInitiated) {
+                                    clearInterval(pollInterval);
+                                    return;
+                                }
+                                
+                                const check = checkImageValid();
+                                
+                                if (check.valid) {
+                                    clearInterval(pollInterval);
+                                    automationState.imageDownloadInitiated = true;
+                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando...`);
+                                    topMostItem.dataset.gpaImageProcessed = 'true';
+                                    triggerDownload(check.src, 'image');
+                                    return;
+                                }
+                                
+                                if (attempts >= maxAttempts) {
+                                    clearInterval(pollInterval);
+                                    console.log(`⚠️ Timeout após ${maxAttempts} tentativas. Baixando imagem atual mesmo assim...`);
+                                    const lastCheck = checkImageValid();
+                                    if (lastCheck.src && lastCheck.sizeKB > 0) {
+                                        automationState.imageDownloadInitiated = true;
+                                        topMostItem.dataset.gpaImageProcessed = 'true';
+                                        triggerDownload(lastCheck.src, 'image');
+                                    }
+                                    return;
+                                }
+                                
+                                // Log a cada 10 tentativas
+                                if (attempts % 10 === 0) {
+                                    console.log(`⏳ Polling imagem... tentativa ${attempts}/${maxAttempts}, atual: ${check.isPlaceholder ? 'PNG placeholder' : (check.isJpeg || check.isWebp ? 'JPEG/WEBP pequeno' : 'outro')}`);
+                                }
+                            }, 500);
+                        } else {
+                            console.log(`⏭️ Formato não reconhecido como placeholder, mas também não válido. Tentando download de qualquer forma...`);
+                            const finalCheck = checkImageValid();
+                            if (finalCheck.src) {
+                                automationState.imageDownloadInitiated = true;
+                                topMostItem.dataset.gpaImageProcessed = 'true';
+                                triggerDownload(finalCheck.src, 'image');
+                            }
                         }
                     }, downloadDelay);
                 }
