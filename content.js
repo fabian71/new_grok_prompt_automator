@@ -743,19 +743,29 @@
         // Aguardar o botão aparecer (página pode estar carregando)
         let trigger = null;
         let attempts = 0;
-        while (!trigger && attempts < 10) {
-            trigger = document.getElementById('model-select-trigger');
+        while (!trigger && attempts < 15) {
+            // Tentar múltiplos seletores
+            trigger = document.getElementById('model-select-trigger') ||
+                      document.querySelector('button[aria-label="Seleção de modelo"]') ||
+                      document.querySelector('button[id*="model"]') ||
+                      document.querySelector('button:has(svg.lucide-play)');
+            
             if (!trigger) {
-                console.log(`⏳ Aguardando botão model-select-trigger... tentativa ${attempts + 1}/10`);
+                console.log(`⏳ Aguardando botão de modelo... tentativa ${attempts + 1}/15`);
                 await sleep(500);
                 attempts++;
             }
         }
         
         if (!trigger) {
-            console.warn('❌ Botão model-select-trigger não encontrado após 10 tentativas.');
+            console.warn('❌ Botão de modelo não encontrado após 15 tentativas.');
+            console.log('🔍 Seletores disponíveis:', 
+                Array.from(document.querySelectorAll('button')).map(b => ({id: b.id, ariaLabel: b.getAttribute('aria-label'), text: b.textContent?.substring(0, 50)}))
+            );
             return false;
         }
+        
+        console.log('✅ Botão de modelo encontrado:', trigger.id || trigger.getAttribute('aria-label') || 'sem ID');
 
         const targetIsVideo = mode === 'video';
 
@@ -1592,7 +1602,10 @@
         console.log(`🎯 Selecionando duração: ${targetDuration}`);
         
         // Abrir o menu de modelo clicando no trigger
-        const trigger = document.getElementById('model-select-trigger');
+        const trigger = document.getElementById('model-select-trigger') ||
+                       document.querySelector('button[aria-label="Seleção de modelo"]') ||
+                       document.querySelector('button:has(svg.lucide-play)');
+                       
         if (!trigger) {
             console.warn('⚠️ Trigger de modelo não encontrado');
             return false;
@@ -1600,7 +1613,7 @@
         
         console.log('🔔 Abrindo menu de modelo...');
         forceClick(trigger);
-        await sleep(800);
+        await sleep(1000); // Aguardar um pouco mais para o menu abrir completamente
         
         // A duração está no menu de modelo, dentro de um menuitem com botões
         // Estrutura: <div role="menuitem"><p>Duração do Vídeo</p><div><button>6s</button><button>10s</button></div></div>
@@ -1629,22 +1642,46 @@
         const durationButtons = durationMenuItem.querySelectorAll('button');
         console.log(`🔍 ${durationButtons.length} botões de duração encontrados`);
         
+        if (durationButtons.length === 0) {
+            console.warn('⚠️ Nenhum botão de duração encontrado no menuitem');
+            document.body.click();
+            return false;
+        }
+        
         for (const btn of durationButtons) {
             const btnText = normalizeText(btn.textContent);
             const ariaLabel = btn.getAttribute('aria-label') || '';
             console.log(`  - Botão: "${btnText}" (aria-label: "${ariaLabel}")`);
             
-            for (const val of possibleValues) {
-                if (btnText.includes(val.toLowerCase()) || ariaLabel.includes(val)) {
-                    console.log(`✅ Duração ${targetDuration} encontrada, clicando...`);
-                    forceClick(btn);
-                    await sleep(500);
-                    return true;
-                }
+            // Verificar se o botão corresponde à duração desejada
+            const isMatch = possibleValues.some(val => 
+                btnText === val.toLowerCase() || 
+                ariaLabel === val ||
+                btnText.includes(val.toLowerCase())
+            );
+            
+            if (isMatch) {
+                console.log(`✅ Duração ${targetDuration} encontrada, clicando...`);
+                forceClick(btn);
+                await sleep(800); // Aguardar mais para a seleção ser aplicada
+                
+                // Verificar se a duração foi selecionada (botão deve ter classe ativa)
+                const isSelected = btn.classList.contains('text-primary') || 
+                                  btn.classList.contains('font-semibold') ||
+                                  btn.getAttribute('aria-pressed') === 'true';
+                
+                console.log(`📊 Botão selecionado: ${isSelected}`);
+                return true;
             }
         }
         
         console.warn(`⚠️ Duração ${targetDuration} não encontrada entre os botões`);
+        console.log('🔍 Botões disponíveis:', Array.from(durationButtons).map(b => ({
+            text: normalizeText(b.textContent),
+            ariaLabel: b.getAttribute('aria-label'),
+            classes: b.className
+        })));
+        
         // Fechar menu clicando fora
         document.body.click();
         return false;
