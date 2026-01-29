@@ -2183,20 +2183,22 @@
             };
         }
         
-        // Ordenar itens por posição vertical (mais recentes primeiro = menor top)
-        allItems.sort((a, b) => {
-            const topA = parseFloat(a.style.top) || Infinity;
-            const topB = parseFloat(b.style.top) || Infinity;
-            return topA - topB;
-        });
+        // Os itens já vêm do DOM na ordem de renderização
+        // No Grok, imagens mais recentes aparecem primeiro no DOM
+        // Vamos processar na ordem reversa (mais antigas primeiro) para manter consistência
+        allItems.reverse();
         
-        // Calcular qual o prompt mais recente foi processado
+        // Calcular o índice do primeiro prompt que tem imagens nesta página
+        // Se temos 8 imagens (2 prompts x 4), e currentIndex=2, então:
+        // - Imagens 0-3 = prompt 0
+        // - Imagens 4-7 = prompt 1
         const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
-        const imagesPerPrompt = 4; // Grok geralmente gera 4 imagens por prompt
+        const imagesPerPrompt = 4;
         
         // Verificar cada item e baixar os válidos (limite de 12 imagens)
         let downloadedCount = 0;
         const maxImages = 12;
+        
         for (let i = 0; i < allItems.length && downloadedCount < maxImages; i++) {
             const item = allItems[i];
             const check = checkImageValid(item);
@@ -2204,17 +2206,20 @@
             if (!check) continue;
             
             if (check.valid) {
-                // Calcular qual prompt esta imagem pertence
-                // i=0,1,2,3 -> prompt atual (currentPromptIdx)
-                // i=4,5,6,7 -> prompt anterior (currentPromptIdx - 1)
-                // etc.
-                const promptOffset = Math.floor(i / imagesPerPrompt);
-                const promptIndex = Math.max(0, currentPromptIdx - promptOffset);
+                // Mapeamento: as primeiras 4 imagens no array (depois do reverse) 
+                // pertencem ao prompt 0, próximas 4 ao prompt 1, etc.
+                const promptIndex = Math.floor(i / imagesPerPrompt);
+                
+                // Verificar se o índice está dentro dos prompts válidos
+                if (promptIndex >= automationState.prompts.length) {
+                    console.log(`⚠️ Índice ${promptIndex} fora do range de prompts, pulando...`);
+                    continue;
+                }
                 
                 const promptName = automationState.prompts[promptIndex] || `prompt_${promptIndex}`;
                 const imageNumber = (i % imagesPerPrompt) + 1;
                 
-                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB | Prompt: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
+                console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB | Prompt[${promptIndex}]: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
                 item.dataset.gpaAllImagesProcessed = 'true';
                 
                 // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
