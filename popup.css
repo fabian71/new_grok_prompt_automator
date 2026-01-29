@@ -153,6 +153,17 @@ body {
     outline: none;
 }
 
+.input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.input-inline {
+    width: auto;
+    padding: 6px 10px;
+    font-size: 14px;
+}
+
 .textarea {
     resize: vertical;
 }

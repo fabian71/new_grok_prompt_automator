@@ -160,23 +160,23 @@
                         <label for="toggle-break" class="label-dark">Habilitar Pausas Automáticas</label>
                     </div>
 
-                    <div id="break-settings" style="display: none;">
-                        <div class="special-row">
+                    <div id="break-settings" style="display: none; margin-top: 12px; padding: 12px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                             <span class="label-dark">A cada</span>
-                            <input type="number" id="break-prompts" class="input-white" value="3" min="1">
+                            <input type="number" id="break-prompts" class="input input-inline" value="3" min="1" style="width: 60px; text-align: center;">
                             <span class="label-dark">imagens/prompts</span>
                         </div>
 
-                        <div class="special-label-center">Intervalo de pausa aleatório (minutos)</div>
+                        <div style="font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 10px;">Intervalo de pausa aleatório (minutos)</div>
 
-                        <div class="special-row">
-                            <input type="number" id="break-min" class="input-white" value="1" min="1">
-                            <span class="separator-dark">—</span>
-                            <input type="number" id="break-max" class="input-white" value="6" min="1">
+                        <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                            <input type="number" id="break-min" class="input input-inline" value="1" min="1" style="width: 60px; text-align: center;">
+                            <span style="color: var(--text-muted);">—</span>
+                            <input type="number" id="break-max" class="input input-inline" value="6" min="1" style="width: 60px; text-align: center;">
                             <span class="label-dark">min</span>
                         </div>
 
-                        <div id="break-badge" class="badge-pill">1 - 6 min</div>
+                        <div id="break-badge" class="badge-pill" style="margin-top: 10px; text-align: center;">1 - 6 min</div>
                     </div>
                 </div>
 
