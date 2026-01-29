@@ -2194,9 +2194,10 @@
         const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
         const imagesPerPrompt = 4; // Grok geralmente gera 4 imagens por prompt
         
-        // Verificar cada item e baixar os válidos
+        // Verificar cada item e baixar os válidos (limite de 12 imagens)
         let downloadedCount = 0;
-        for (let i = 0; i < allItems.length; i++) {
+        const maxImages = 12;
+        for (let i = 0; i < allItems.length && downloadedCount < maxImages; i++) {
             const item = allItems[i];
             const check = checkImageValid(item);
             
@@ -2241,6 +2242,9 @@
         
         if (downloadedCount > 0) {
             console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas'`);
+        }
+        if (downloadedCount >= maxImages) {
+            console.log(`⚠️ Limite de ${maxImages} imagens atingido. Parando download.`);
         }
         } finally {
             isDownloadingAllImages = false;
