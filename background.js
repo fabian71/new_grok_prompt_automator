@@ -142,11 +142,14 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       const subfolder = settings.downloadSubfolder ? settings.downloadSubfolder.trim().replace(/[\\/]+$/g, '') : "";
       const originalPrompt = request.prompt || "imagem";
 
-      const safePrompt = originalPrompt
+      // Se o prompt estiver vazio após trim, usar um nome padrão
+      const effectivePrompt = originalPrompt.trim() || "imagem";
+
+      const safePrompt = effectivePrompt
         .replace(/[\\/:*?"<>|]/g, "_")
         .replace(/[^a-zA-Z0-9_\s\-]/g, "")
         .trim()
-        .substring(0, 100);
+        .substring(0, 100) || "imagem"; // Fallback para "imagem" se ficar vazio
 
       function detectExtFromUrl(url, type) {
         if (type === 'video') return 'mp4';

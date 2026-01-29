@@ -2170,16 +2170,15 @@
             };
         }
         
-        // Ordenar itens por posição vertical (mais recentes primeiro)
+        // Ordenar itens por posição vertical (mais recentes primeiro = menor top)
         allItems.sort((a, b) => {
             const topA = parseFloat(a.style.top) || Infinity;
             const topB = parseFloat(b.style.top) || Infinity;
             return topA - topB;
         });
         
-        // Distribuir imagens entre os prompts processados
-        // currentIndex - 1 é o prompt mais recente
-        const totalPromptsProcessed = Math.max(0, automationState.currentIndex - 1);
+        // Calcular qual o prompt mais recente foi processado
+        const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
         const imagesPerPrompt = 4; // Grok geralmente gera 4 imagens por prompt
         
         // Verificar cada item e baixar os válidos
@@ -2192,15 +2191,13 @@
             
             if (check.valid) {
                 // Calcular qual prompt esta imagem pertence
-                // Distribuição: as primeiras 4 imagens = prompt 0, próximas 4 = prompt 1, etc.
-                const promptIndex = Math.min(
-                    automationState.prompts.length - 1,
-                    Math.floor(i / imagesPerPrompt)
-                );
+                // i=0,1,2,3 -> prompt atual (currentPromptIdx)
+                // i=4,5,6,7 -> prompt anterior (currentPromptIdx - 1)
+                // etc.
+                const promptOffset = Math.floor(i / imagesPerPrompt);
+                const promptIndex = Math.max(0, currentPromptIdx - promptOffset);
                 
-                // Se temos menos prompts que o calculado, usar o último prompt
-                const actualPromptIndex = Math.min(promptIndex, Math.max(0, automationState.currentIndex - 1));
-                const promptName = automationState.prompts[actualPromptIndex] || `prompt_${actualPromptIndex}`;
+                const promptName = automationState.prompts[promptIndex] || `prompt_${promptIndex}`;
                 const imageNumber = (i % imagesPerPrompt) + 1;
                 
                 console.log(`⬇️ Baixando imagem ${downloadedCount + 1}: ${check.sizeKB.toFixed(1)}KB | Prompt: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
