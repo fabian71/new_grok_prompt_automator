@@ -2527,8 +2527,11 @@
                     triggerDownload(video.src, 'video', currentPromptIndex);
                 }
                 
-                // Se for o último prompt, finalizar
-                if (automationState.currentIndex >= automationState.prompts.length) {
+                // Se for o último item, finalizar
+                const isLastItem = automationState.mode === 'image-to-video'
+                    ? automationState.currentImageIndex >= automationState.imageQueue.length - 1
+                    : automationState.currentIndex >= automationState.prompts.length - 1;
+                if (isLastItem) {
                     console.log('✅ Último vídeo processado (com upscale), finalizando...');
                     handleAutomationComplete();
                 }
@@ -2553,7 +2556,11 @@
                 triggerDownload(video.src, 'video', currentPromptIndex);
                 console.log('✅ Download via extensão iniciado.');
 
-                if (automationState.currentIndex >= automationState.prompts.length) {
+                // Se for o último item, finalizar
+                const isLastItemNonUpscale = automationState.mode === 'image-to-video'
+                    ? automationState.currentImageIndex >= automationState.imageQueue.length - 1
+                    : automationState.currentIndex >= automationState.prompts.length - 1;
+                if (isLastItemNonUpscale) {
                     handleAutomationComplete();
                 }
 
