@@ -2137,9 +2137,11 @@
                             const approxSizeBytes = base64Length * 0.75;
                             const approxSizeKB = approxSizeBytes / 1024;
                             
+                            // Qualquer PNG é considerado placeholder no Grok
+                            // JPEG/WEBP maior que 30KB é considerado imagem final
                             return {
-                                valid: (isJpeg || isWebp) && approxSizeKB >= 100,
-                                isPlaceholder: isPng && approxSizeKB < 100,
+                                valid: (isJpeg || isWebp) && approxSizeKB >= 30,
+                                isPlaceholder: isPng,
                                 isJpeg,
                                 isWebp,
                                 sizeKB: approxSizeKB,
@@ -2201,14 +2203,43 @@
                                     console.log(`⏳ Polling imagem... tentativa ${attempts}/${maxAttempts}, atual: ${check.isPlaceholder ? 'PNG placeholder' : (check.isJpeg || check.isWebp ? 'JPEG/WEBP pequeno' : 'outro')}`);
                                 }
                             }, 500);
-                        } else {
-                            console.log(`⏭️ Formato não reconhecido como placeholder, mas também não válido. Tentando download de qualquer forma...`);
-                            const finalCheck = checkImageValid();
-                            if (finalCheck.src) {
-                                automationState.imageDownloadInitiated = true;
-                                topMostItem.dataset.gpaImageProcessed = 'true';
-                                triggerDownload(finalCheck.src, 'image');
-                            }
+                        } else if (!initialCheck.isPlaceholder && !initialCheck.valid) {
+                            // JPEG/WEBP pequeno demais, iniciar polling também
+                            console.log(`⏳ Imagem JPEG/WEBP muito pequena (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling...`);
+                            
+                            let attempts = 0;
+                            const maxAttempts = 60;
+                            
+                            const pollInterval = setInterval(() => {
+                                attempts++;
+                                
+                                if (!automationState.isRunning || automationState.imageDownloadInitiated) {
+                                    clearInterval(pollInterval);
+                                    return;
+                                }
+                                
+                                const check = checkImageValid();
+                                
+                                if (check.valid) {
+                                    clearInterval(pollInterval);
+                                    automationState.imageDownloadInitiated = true;
+                                    console.log(`✅ Imagem final detectada após ${attempts} tentativas (${check.sizeKB.toFixed(1)}KB). Baixando...`);
+                                    topMostItem.dataset.gpaImageProcessed = 'true';
+                                    triggerDownload(check.src, 'image');
+                                    return;
+                                }
+                                
+                                if (attempts >= maxAttempts) {
+                                    clearInterval(pollInterval);
+                                    console.log(`⚠️ Timeout. Baixando imagem atual...`);
+                                    const lastCheck = checkImageValid();
+                                    if (lastCheck.src && (lastCheck.isJpeg || lastCheck.isWebp)) {
+                                        automationState.imageDownloadInitiated = true;
+                                        topMostItem.dataset.gpaImageProcessed = 'true';
+                                        triggerDownload(lastCheck.src, 'image');
+                                    }
+                                }
+                            }, 500);
                         }
                     }, downloadDelay);
                 }
