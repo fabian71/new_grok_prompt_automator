@@ -1366,10 +1366,42 @@
                 });
             }
 
-            // Se for o último prompt, finalizar imediatamente
+            // Se for o último prompt, aguardar download da imagem antes de finalizar
             if (automationState.isRunning && automationState.currentIndex >= automationState.prompts.length) {
-                console.log('✅ Último prompt processado, finalizando automação...');
-                handleAutomationComplete();
+                console.log('✅ Último prompt processado, aguardando download da imagem...');
+                
+                // Aguardar até que o download seja iniciado ou timeout
+                let waitAttempts = 0;
+                const maxWaitAttempts = 120; // 60 segundos (500ms * 120)
+                
+                const waitForDownload = setInterval(() => {
+                    waitAttempts++;
+                    
+                    // Verificar se o download foi iniciado
+                    if (automationState.imageDownloadInitiated) {
+                        clearInterval(waitForDownload);
+                        console.log('✅ Download da última imagem iniciado, finalizando automação...');
+                        // Aguardar mais 2 segundos para garantir que o download começou
+                        setTimeout(() => {
+                            handleAutomationComplete();
+                        }, 2000);
+                        return;
+                    }
+                    
+                    // Timeout após 60 segundos
+                    if (waitAttempts >= maxWaitAttempts) {
+                        clearInterval(waitForDownload);
+                        console.log('⚠️ Timeout aguardando download da última imagem. Finalizando mesmo assim...');
+                        handleAutomationComplete();
+                        return;
+                    }
+                    
+                    // Log a cada 5 segundos
+                    if (waitAttempts % 10 === 0) {
+                        console.log(`⏳ Aguardando download da última imagem... ${(waitAttempts * 0.5).toFixed(0)}s`);
+                    }
+                }, 500);
+                
                 return;
             }
         } catch (error) {
