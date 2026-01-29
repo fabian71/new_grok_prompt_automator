@@ -192,118 +192,235 @@
             position: 'fixed',
             bottom: '20px',
             right: '20px',
-            width: '320px',
-            maxWidth: '85vw',
+            width: '360px',
+            maxWidth: '90vw',
             zIndex: '999999',
-            backdropFilter: 'blur(10px)',
-            background: 'linear-gradient(135deg, rgba(24,24,32,0.9), rgba(32,40,56,0.85))',
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
-            borderRadius: '18px',
-            padding: '14px 16px',
-            color: '#f7f9ff',
-            fontFamily: 'Inter, Segoe UI, system-ui, -apple-system, sans-serif',
+            backdropFilter: 'blur(12px)',
+            background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.85))',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(56, 189, 248, 0.1)',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            color: '#e5e7eb',
+            fontFamily: "'Trebuchet MS', 'Segoe UI', sans-serif",
             opacity: '0',
             transform: 'translateY(10px)',
             transition: 'opacity 160ms ease, transform 200ms ease'
         });
 
-        const titleRow = document.createElement('div');
-        Object.assign(titleRow.style, { display: 'flex', alignItems: 'center', gap: '8px' });
-
-        const badge = document.createElement('div');
-        badge.textContent = 'Grok Automator';
-        Object.assign(badge.style, {
-            fontSize: '12px',
-            padding: '4px 8px',
-            borderRadius: '999px',
-            background: 'rgba(255,255,255,0.08)',
-            color: '#c5d4ff',
-            letterSpacing: '0.02em',
-            textTransform: 'uppercase'
+        // Header com gradiente igual ao da extensão
+        const header = document.createElement('div');
+        Object.assign(header.style, {
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.1))',
+            padding: '14px 16px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
         });
 
+        // Logo e título
+        const logoSection = document.createElement('div');
+        Object.assign(logoSection.style, {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+        });
+
+        // Ícone/logo (círculo com gradiente)
+        const iconDiv = document.createElement('div');
+        Object.assign(iconDiv.style, {
+            width: '28px',
+            height: '28px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #38bdf8, #0ea5e9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#fff',
+            boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)'
+        });
+        iconDiv.textContent = 'G';
+        logoSection.appendChild(iconDiv);
+
+        const titleText = document.createElement('div');
+        Object.assign(titleText.style, {
+            fontSize: '15px',
+            fontWeight: '700',
+            color: '#e5e7eb'
+        });
+        titleText.textContent = 'Grok Automator';
+        logoSection.appendChild(titleText);
+
+        header.appendChild(logoSection);
+
+        // Seção direita: badge de status e botão fechar
+        const rightSection = document.createElement('div');
+        Object.assign(rightSection.style, {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+        });
+
+        // Badge de versão/status
+        const statusBadge = document.createElement('div');
+        Object.assign(statusBadge.style, {
+            padding: '4px 10px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '700',
+            letterSpacing: '0.6px',
+            background: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            color: '#7dd3fc'
+        });
+        statusBadge.textContent = 'v2.0';
+        rightSection.appendChild(statusBadge);
+
+        // Botão fechar (X)
+        const closeBtn = document.createElement('button');
+        Object.assign(closeBtn.style, {
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            border: 'none',
+            background: 'rgba(239, 68, 68, 0.15)',
+            color: '#ef4444',
+            fontSize: '14px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 150ms ease'
+        });
+        closeBtn.innerHTML = '✕';
+        closeBtn.title = 'Fechar overlay';
+        closeBtn.onmouseenter = () => {
+            closeBtn.style.background = 'rgba(239, 68, 68, 0.25)';
+            closeBtn.style.transform = 'scale(1.05)';
+        };
+        closeBtn.onmouseleave = () => {
+            closeBtn.style.background = 'rgba(239, 68, 68, 0.15)';
+            closeBtn.style.transform = 'scale(1)';
+        };
+        closeBtn.onclick = () => {
+            hideOverlay();
+        };
+        rightSection.appendChild(closeBtn);
+
+        header.appendChild(rightSection);
+        container.appendChild(header);
+
+        // Conteúdo principal
+        const content = document.createElement('div');
+        Object.assign(content.style, {
+            padding: '14px 16px 16px'
+        });
+
+        // Status
         const statusEl = document.createElement('div');
         Object.assign(statusEl.style, {
-            fontWeight: '700',
-            fontSize: '14px',
-            color: '#e8edff',
-            flex: '1',
-            textAlign: 'right'
+            fontSize: '13px',
+            fontWeight: '600',
+            color: '#38bdf8',
+            marginBottom: '10px'
         });
         statusEl.textContent = 'Pronto';
 
-        titleRow.appendChild(badge);
-        titleRow.appendChild(statusEl);
-
+        // Prompt
         const promptEl = document.createElement('div');
         Object.assign(promptEl.style, {
-            marginTop: '10px',
             fontSize: '13px',
-            lineHeight: '1.35',
-            color: '#dbe6ff',
+            lineHeight: '1.4',
+            color: '#d1d5db',
             maxHeight: '60px',
             overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            textOverflow: 'ellipsis',
+            marginBottom: '10px',
+            padding: '10px',
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: '10px',
+            border: '1px solid rgba(255, 255, 255, 0.06)'
+        });
+
+        // Info row (counter + timer)
+        const infoRow = document.createElement('div');
+        Object.assign(infoRow.style, {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px',
+            fontSize: '12px',
+            color: '#9ca3af'
         });
 
         const counterEl = document.createElement('div');
-        Object.assign(counterEl.style, {
-            marginTop: '8px',
-            fontSize: '12px',
-            color: '#9fb4e6'
-        });
+        counterEl.textContent = '';
 
         const timerEl = document.createElement('div');
-        Object.assign(timerEl.style, {
-            marginTop: '4px',
-            fontSize: '12px',
-            color: '#b7c7f5'
-        });
         timerEl.textContent = 'Tempo: 00:00';
 
+        infoRow.appendChild(counterEl);
+        infoRow.appendChild(timerEl);
+
+        // Break info
         const breakInfoEl = document.createElement('div');
         Object.assign(breakInfoEl.style, {
-            marginTop: '6px',
             fontSize: '11px',
-            color: '#ffcc80',
-            display: 'none'
+            color: '#f59e0b',
+            display: 'none',
+            marginBottom: '8px',
+            padding: '6px 10px',
+            background: 'rgba(245, 158, 11, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid rgba(245, 158, 11, 0.2)'
         });
 
+        // Progress bar
         const progressTrack = document.createElement('div');
         Object.assign(progressTrack.style, {
-            marginTop: '10px',
             width: '100%',
-            height: '8px',
+            height: '6px',
             borderRadius: '999px',
-            background: 'rgba(255,255,255,0.08)',
-            overflow: 'hidden'
+            background: 'rgba(255, 255, 255, 0.06)',
+            overflow: 'hidden',
+            marginBottom: '12px'
         });
 
         const progressBar = document.createElement('div');
         Object.assign(progressBar.style, {
             height: '100%',
             width: '0%',
-            background: 'linear-gradient(90deg, #7dd6ff, #9b8cfc)',
-            transition: 'width 160ms ease'
+            background: 'linear-gradient(90deg, #38bdf8, #0ea5e9)',
+            transition: 'width 160ms ease',
+            borderRadius: '999px'
         });
         progressTrack.appendChild(progressBar);
 
-        container.appendChild(titleRow);
-        container.appendChild(promptEl);
-        container.appendChild(counterEl);
-        container.appendChild(timerEl);
-        container.appendChild(breakInfoEl);
-        container.appendChild(progressTrack);
-
-        const donateEl = document.createElement('div');
-        Object.assign(donateEl.style, {
-            marginTop: '10px',
+        // Footer com donate
+        const footer = document.createElement('div');
+        Object.assign(footer.style, {
+            padding: '12px 16px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+            background: 'rgba(255, 255, 255, 0.02)',
             fontSize: '12px',
-            color: '#c5d4ff'
+            color: '#9ca3af',
+            textAlign: 'center'
         });
-        donateEl.innerHTML = 'Gosta do projeto? <span style="color:#ff6b9a;">❤</span> Me paga um cafezinho: <a href="https://ko-fi.com/dentparanoide" target="_blank" rel="noopener noreferrer" style="color:#9bd5ff; text-decoration: underline;">ko-fi.com/dentparanoide</a>';
-        container.appendChild(donateEl);
+        footer.innerHTML = 'Gosta do projeto? <span style="color:#f43f5e;">♥</span> Me paga um cafezinho: <a href="https://ko-fi.com/dentparanoide" target="_blank" rel="noopener noreferrer" style="color:#38bdf8; text-decoration: none; font-weight: 600;">ko-fi.com/dentparanoide</a>';
+
+        // Montar conteúdo
+        content.appendChild(statusEl);
+        content.appendChild(promptEl);
+        content.appendChild(infoRow);
+        content.appendChild(breakInfoEl);
+        content.appendChild(progressTrack);
+
+        container.appendChild(content);
+        container.appendChild(footer);
 
         document.body.appendChild(container);
 
@@ -314,6 +431,8 @@
         overlayState.timerEl = timerEl;
         overlayState.breakInfoEl = breakInfoEl;
         overlayState.progressBar = progressBar;
+        overlayState.closeBtn = closeBtn;
+        overlayState.statusBadge = statusBadge;
 
         requestAnimationFrame(() => {
             container.style.opacity = '1';
