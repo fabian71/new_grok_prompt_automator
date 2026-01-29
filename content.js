@@ -31,6 +31,7 @@
         downloadedVideos: new Set(),
         processedVideoUrls: new Set(),
         imageDownloadInitiated: false,
+        lastPromptSentIndex: -1,
         restoredFromReload: false,
         promptsSinceLastBreak: 0,
         isOnBreak: false,
@@ -1278,6 +1279,11 @@
 
         try {
             await sleep(500);
+            
+            // Registrar o índice do prompt que está sendo enviado
+            automationState.lastPromptSentIndex = automationState.currentIndex;
+            console.log(`📝 Registrando envio do prompt[${automationState.currentIndex}]: "${currentPrompt.substring(0, 40)}..."`);
+            
             await submitPrompt(currentPrompt, currentAspectRatio);
             
             // Para modo vídeo, precisamos esperar a geração completar antes de avançar
@@ -2150,8 +2156,11 @@
         isDownloadingAllImages = true;
         
         try {
-        // Obter o índice do prompt atual (o que acabou de ser processado)
-        const currentPromptIdx = Math.max(0, automationState.currentIndex - 1);
+        // Obter o índice do prompt atual
+        // Usar lastPromptSentIndex se disponível, senão calcular baseado em currentIndex
+        const currentPromptIdx = automationState.lastPromptSentIndex >= 0 
+            ? automationState.lastPromptSentIndex 
+            : Math.max(0, automationState.currentIndex - 1);
         const currentPrompt = automationState.prompts[currentPromptIdx];
         
         if (!currentPrompt) {
