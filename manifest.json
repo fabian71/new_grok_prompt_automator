@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Grok Prompt Automator",
+  "version": "2.0",
+  "description": "Automatiza o envio de prompts para o Grok Imagine com lista personalizada e controle de delay",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://grok.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://grok.com/imagine*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Grok Prompt Automator",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content.js"
+      ],
+      "matches": [
+        "https://grok.com/*"
+      ]
+    }
+  ]
+}

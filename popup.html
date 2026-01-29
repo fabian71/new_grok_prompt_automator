@@ -1,0 +1,238 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grok Prompt Automator</title>
+    <link rel="stylesheet" href="popup.css">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <img src="icons/icon-32.png" alt="Grok Automator">
+                <h1>Grok Prompt Automator</h1>
+                <span id="version-badge" class="version-badge"></span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Tabs System -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="text-tab">Texto para Vídeo/Imagem</button>
+                <button class="tab-btn" data-tab="image-video-tab">Imagem para Vídeo</button>
+            </div>
+
+            <div id="text-tab" class="tab-content active">
+                <div class="section">
+                    <label class="label">Modo de Geração:</label>
+                    <div class="radio-group" style="display: flex; gap: 15px; margin-bottom: 10px;">
+                        <div class="radio-container">
+                            <input type="radio" id="mode-image" name="generation-mode" value="image">
+                            <label for="mode-image">Imagem</label>
+                        </div>
+                        <div class="radio-container">
+                            <input type="radio" id="mode-video" name="generation-mode" value="video" checked>
+                            <label for="mode-video">Vídeo</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" id="video-duration-container">
+                    <label for="video-duration-select" class="label">Duracao do Video:</label>
+                    <select id="video-duration-select" class="input">
+                        <option value="6s">6s</option>
+                        <option value="10s">10s</option>
+                    </select>
+                </div>
+
+                <div class="section">
+                    <label for="prompts-textarea" class="label">Lista de prompts:</label>
+                    <textarea id="prompts-textarea" class="textarea"
+                        placeholder="Digite seusprompts, um por linha...&#10;&#10;Exemplo:&#10;Um gato laranja sentado em uma janela&#10;Uma paisagem montanhosa ao pôr do sol"
+                        rows="8"></textarea>
+                </div>
+
+                <div class="section">
+                    <label for="delay-input" class="label">Delay entre envios (segundos):</label>
+                    <input type="number" id="delay-input" class="input" value="12" min="1" max="300">
+                    <div id="video-delay-warning"
+                        style="display: none; margin-top: 8px; padding: 8px; border-radius: 8px; background: #fff7ed; color: #b45309; font-size: 12px;">
+                        Atenção: este tempo pode ser insuficiente para o Grok gerar e fazer upscale do vídeo.
+                    </div>
+                </div>
+
+                <div class="section">
+                    <label class="label">Proporção (Aspect Ratio):</label>
+                    <select id="aspect-ratio-select" class="input" style="margin-bottom: 10px;">
+                        <option value="1:1">Square (1:1)</option>
+                        <option value="2:3">Portrait (2:3)</option>
+                        <option value="3:2" selected>Landscape (3:2)</option>
+                        <option value="9:16">Vertical (9:16)</option>
+                        <option value="16:9">Widescreen (16:9)</option>
+                    </select>
+
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="toggle-randomize">
+                        <label for="toggle-randomize" class="label">Randomizar proporção</label>
+                    </div>
+
+                    <div id="randomize-section"
+                        style="display: none; margin-top: 10px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        <label class="label" style="margin-bottom: 5px; display: block;">Incluir no sorteio:</label>
+                        <div class="checkbox-container">
+                            <input type="checkbox" class="random-option" value="1:1" id="random-1-1" checked>
+                            <label for="random-1-1" class="label-small">Square (1:1)</label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" class="random-option" value="2:3" id="random-2-3" checked>
+                            <label for="random-2-3" class="label-small">Portrait (2:3)</label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" class="random-option" value="3:2" id="random-3-2" checked>
+                            <label for="random-3-2" class="label-small">Landscape (3:2)</label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" class="random-option" value="9:16" id="random-9-16" checked>
+                            <label for="random-9-16" class="label-small">Vertical (9:16)</label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" class="random-option" value="16:9" id="random-16-9" checked>
+                            <label for="random-16-9" class="label-small">Widescreen (16:9)</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="image-video-tab" class="tab-content">
+                <div class="section" id="video-duration-container-image">
+                    <label for="video-duration-select" class="label">Duracao do Video:</label>
+                    <select id="video-duration-select" class="input">
+                        <option value="6s">6s</option>
+                        <option value="10s">10s</option>
+                    </select>
+                </div>
+
+                <div class="section">
+                    <label for="delay-input-image" class="label">Delay entre envios (segundos):</label>
+                    <input type="number" id="delay-input-image" class="input" value="10" min="1" max="300">
+                    <div id="video-delay-warning-image"
+                        style="display: none; margin-top: 8px; padding: 8px; border-radius: 8px; background: #fff7ed; color: #b45309; font-size: 12px;">
+                        Atenção: este tempo pode ser insuficiente para o Grok gerar e fazer upscale do vídeo.
+                    </div>
+                </div>
+
+                <div class="section">
+                    <label class="label">Upload de Imagens (Batch):</label>
+                    <div id="dropzone" class="dropzone">
+                        <div class="dropzone-text">
+                            <span>📁 Arraste ou clique para fazer upload</span>
+                            <small>Suporta múltiplas imagens</small>
+                        </div>
+                        <input type="file" id="image-input" multiple accept="image/*" style="display: none;">
+                    </div>
+                    <div id="image-count-label" class="label"
+                        style="display: none; margin-top: 12px; margin-bottom: 4px; font-weight: 700; color: var(--primary-light);">
+                        0 imagens selecionadas
+                    </div>
+                    <div id="image-preview-container" class="image-preview-container">
+                        <!-- Thumbnails will appear here -->
+                    </div>
+                    <div class="image-controls" style="display: none; margin-top: 10px;">
+                        <button id="clear-images-btn" class="btn btn-secondary"
+                            style="padding: 8px; font-size: 12px; min-height: auto;">Limpar Imagens</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section special-settings"
+                style="margin-top: 15px; padding: 12px; border: 1px solid #444; border-radius: 8px; background-color: rgba(255,255,255,0.03);">
+                <label class="label" style="font-weight: bold; margin-bottom: 10px; display: block;">⚙️ Configurações
+                    Especiais</label>
+
+                <div class="section special-card-settings">
+                    <div class="checkbox-container centered-checkbox">
+                        <input type="checkbox" id="toggle-break">
+                        <label for="toggle-break" class="label-dark">Habilitar Pausas Automáticas</label>
+                    </div>
+
+                    <div id="break-settings" style="display: none;">
+                        <div class="special-row">
+                            <span class="label-dark">A cada</span>
+                            <input type="number" id="break-prompts" class="input-white" value="3" min="1">
+                            <span class="label-dark">imagens/prompts</span>
+                        </div>
+
+                        <div class="special-label-center">Intervalo de pausa aleatório (minutos)</div>
+
+                        <div class="special-row">
+                            <input type="number" id="break-min" class="input-white" value="1" min="1">
+                            <span class="separator-dark">—</span>
+                            <input type="number" id="break-max" class="input-white" value="6" min="1">
+                            <span class="label-dark">min</span>
+                        </div>
+
+                        <div id="break-badge" class="badge-pill">1 - 6 min</div>
+                    </div>
+                </div>
+
+                <div class="section download-settings">
+                    <div class="checkbox-container" id="upscale-container" style="display: none;">
+                        <input type="checkbox" id="toggle-upscale">
+                        <label for="toggle-upscale" class="label">Upscale Vídeo (Beta)</label>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="auto-download-checkbox" checked>
+                        <label for="auto-download-checkbox" class="label">Baixar imagens automaticamente</label>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="auto-download-prompt-checkbox">
+                        <label for="auto-download-prompt-checkbox" class="label">💾 Baixar prompt (arquivo .txt)</label>
+                    </div>
+                    <div id="specificDownloadFolderSection" style="margin-top: 10px;">
+                        <label for="downloadSubfolderName" class="label">Salvar na subpasta (em Downloads):</label>
+                        <div style="display: flex;">
+                            <input type="text" id="downloadSubfolderName" placeholder="Nome da subpasta (opcional)"
+                                class="input" style="flex-grow: 1; margin-right: 5px;">
+                            <button id="saveDownloadFolder" class="btn">Salvar</button>
+                        </div>
+                        <div id="downloadFolderStatus" style="font-size: 12px; margin-top: 5px;"></div>
+                    </div>
+                    <div id="image-delay-warning"
+                        style="display: none; margin-top: 10px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404; font-size: 12px;">
+                        ⚠️ <strong>Atenção:</strong> No modo Imagem, um delay abaixo de 20 segundos pode causar falhas
+                        no
+                        download automático.
+                    </div>
+                </div>
+
+                <div class="automation-controls">
+                    <button id="start-btn" class="btn btn-primary">Iniciar automação</button>
+                    <button id="stop-btn" class="btn btn-danger" disabled>Parar automação</button>
+                </div>
+
+                <div class="reset-controls" id="reset-controls-container">
+                    <button id="reset-btn" class="btn btn-warning">🔄 Zerar Fila</button>
+                </div>
+
+                <div class="status">
+                    <div id="status-text" class="status-text">Pronto para iniciar</div>
+                    <div id="progress-info" class="progress-info"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Automatiza prompts para Grok Imagine</p>
+            <p id="version-footer" class="version-footer"></p>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

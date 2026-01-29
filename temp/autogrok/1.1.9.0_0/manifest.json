@@ -1,0 +1,42 @@
+{
+   "action": {
+      "default_title": "Grok Automation - Auto Grok on Grok.com"
+   },
+   "author": {
+      "email": "kylenguyenaws@gmail.com"
+   },
+   "background": {
+      "service_worker": "service-worker-loader.js",
+      "type": "module"
+   },
+   "content_scripts": [ {
+      "all_frames": false,
+      "js": [ "assets/index.ts-CutRZIlF.js" ],
+      "matches": [ "*://grok.com/*" ],
+      "run_at": "document_end"
+   } ],
+   "description": "Auto Grok your prompts at scale. Batch generate and auto-download videos and images on grok.com.",
+   "host_permissions": [ "*://grok.com/*", "*://*.grok.com/*" ],
+   "icons": {
+      "128": "src/assets/logo.png",
+      "16": "src/assets/logo.png",
+      "24": "src/assets/logo.png",
+      "32": "src/assets/logo.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiTdxPncGODOtiSNJv81pBCCsOGfRlBgE0GMyASwPuWSZ+kzxgV5xjxWTP+02/RKFIZEcqxvgxhWNeUyeeXBt1CQUuH+esmwutndDFxtr0VP5lhtWaF6SoJApIB8d7yoa3kuLsR/hTFLQ27z5Obq8MsgeLut+ENRiUq2Ef/PLp5IgTl6YCE3kWUzLcgfA5YRTZtwfXkVsL3sdu6bX7wMXAvz5AZkff0aMFhQEKEzojMKP9UnctmWqDL/84QrUypxlTTKiBglBVzyU4rnJZvPzvZ6WOgqoWV0QOrLdWag3ynqJNoHophaSZv6t8DS7L4DUtBT8HjeY0coUusd9RaIHKQIDAQAB",
+   "manifest_version": 3,
+   "name": "Grok Automation - Auto Grok on Grok.com",
+   "offline_enabled": true,
+   "permissions": [ "storage", "tabs", "background", "sidePanel", "activeTab", "downloads" ],
+   "side_panel": {
+      "default_path": "src/ui/side-panel/index.html"
+   },
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "1.1.9.0",
+   "version_name": "1.1.9",
+   "web_accessible_resources": [ {
+      "matches": [ "*://grok.com/*" ],
+      "resources": [ "assets/index.ts-CutRZIlF.js" ],
+      "use_dynamic_url": false
+   } ]
+}
