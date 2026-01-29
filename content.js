@@ -2203,10 +2203,19 @@
             };
         }
         
-        // Baixar apenas as imagens do prompt atual (usar valor configurado ou padrão 4)
-        let downloadedCount = 0;
+        // Verificar se já atingimos o limite de downloads para este prompt
         const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
-        console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}`);
+        const alreadyDownloaded = parseInt(item.dataset.gpaImagesDownloadedCount || '0');
+        if (alreadyDownloaded >= maxImagesPerPrompt) {
+            console.log(`✅ Limite de ${maxImagesPerPrompt} imagens já atingido para este prompt.`);
+            isDownloadingAllImages = false;
+            return;
+        }
+        
+        console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
+        
+        // Baixar apenas as imagens do prompt atual
+        let downloadedCount = alreadyDownloaded;
         
         // Processar itens na ordem do DOM
         for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
@@ -2219,8 +2228,9 @@
                 const imageNumber = downloadedCount + 1;
                 const promptName = currentPrompt;
                 
-                console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/4]`);
+                console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
                 item.dataset.gpaAllImagesProcessed = 'true';
+                item.dataset.gpaImagesDownloadedCount = String(downloadedCount + 1);
                 
                 // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
                 // Temporariamente modificar o prompt para incluir número da imagem
