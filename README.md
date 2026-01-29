@@ -1,4 +1,4 @@
-# Grok Prompt Automator 1.4.0
+# Grok Prompt Automator 2.0
 
 Extensão para automatizar envios no Grok Imagine (`https://grok.com/imagine`) com suporte completo para **geração de imagens e vídeos**: envia prompts em lote, aplica proporções, faz upscale de vídeos e baixa os arquivos gerados automaticamente.
 
