@@ -1191,7 +1191,7 @@
             index: totalPrompts,
             total: totalPrompts
         });
-        setTimeout(hideOverlay, 1200);
+        // Overlay permanece visível para o usuário ver o resultado
         resetAutomation();
     }
 
