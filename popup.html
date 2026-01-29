@@ -189,13 +189,16 @@
                         <input type="checkbox" id="auto-download-checkbox" checked>
                         <label for="auto-download-checkbox" class="label">Baixar imagens automaticamente</label>
                     </div>
-                    <div class="checkbox-container">
-                        <input type="checkbox" id="auto-download-prompt-checkbox">
-                        <label for="auto-download-prompt-checkbox" class="label">💾 Baixar prompt (arquivo .txt)</label>
-                    </div>
-                    <div class="checkbox-container" id="download-all-images-container" style="display: none;">
-                        <input type="checkbox" id="download-all-images-checkbox">
-                        <label for="download-all-images-checkbox" class="label">🖼️ Baixar TODAS as imagens geradas</label>
+                    <!-- Opções condicionais (só aparecem se auto-download estiver marcado) -->
+                    <div id="auto-download-options" style="margin-left: 20px; margin-top: 8px;">
+                        <div class="checkbox-container" id="download-all-images-container" style="display: none;">
+                            <input type="checkbox" id="download-all-images-checkbox">
+                            <label for="download-all-images-checkbox" class="label">🖼️ Baixar TODAS as imagens geradas</label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" id="auto-download-prompt-checkbox">
+                            <label for="auto-download-prompt-checkbox" class="label">💾 Baixar prompt (arquivo .txt)</label>
+                        </div>
                     </div>
                     <div id="specificDownloadFolderSection" style="margin-top: 10px;">
                         <label for="downloadSubfolderName" class="label">Salvar na subpasta (em Downloads):</label>

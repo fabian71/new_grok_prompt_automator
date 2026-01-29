@@ -521,13 +521,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 videoDurationContainer.style.display = mode === 'video' ? 'block' : 'none';
             }
             
-            // Mostrar/esconder opção de baixar todas as imagens (apenas modo imagem)
-            if (downloadAllImagesContainer) {
-                downloadAllImagesContainer.style.display = mode === 'image' ? 'flex' : 'none';
-            }
-            
             // Save mode
             chrome.storage.local.set({ generationMode: mode });
+            
+            // updateAutoDownloadOptions será chamado pelo listener adicionado depois
         });
     });
 
@@ -630,16 +627,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Auto download checkbox
-    autoDownloadCheckbox.addEventListener('change', () => {
+    const autoDownloadOptions = document.getElementById('auto-download-options');
+    
+    function updateAutoDownloadOptions() {
+        const isChecked = autoDownloadCheckbox.checked;
+        const mode = document.querySelector('input[name="generation-mode"]:checked')?.value || 'video';
+        
+        // Mostrar/esconder opções condicionais
+        if (autoDownloadOptions) {
+            autoDownloadOptions.style.display = isChecked ? 'block' : 'none';
+        }
+        
+        // Atualizar visibilidade específica do "Baixar Todas" baseado no modo
+        if (downloadAllImagesContainer) {
+            downloadAllImagesContainer.style.display = (isChecked && mode === 'image') ? 'flex' : 'none';
+        }
+        
+        // Delay warning
         const delay = parseInt(delayInput.value);
-        const mode = document.querySelector('input[name="generation-mode"]:checked').value;
-
-        if (mode === 'image' && autoDownloadCheckbox.checked && delay < 20) {
+        if (mode === 'image' && isChecked && delay < 20) {
             imageDelayWarning.style.display = 'block';
         } else {
             imageDelayWarning.style.display = 'none';
         }
+    }
+    
+    autoDownloadCheckbox.addEventListener('change', updateAutoDownloadOptions);
+    
+    // Atualizar quando mudar de modo também
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', updateAutoDownloadOptions);
     });
+    
+    // Inicializar estado
+    updateAutoDownloadOptions();
 
     // Save download folder
     saveDownloadFolder.addEventListener('click', async () => {
