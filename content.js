@@ -1326,6 +1326,19 @@
                 }
             }
             
+            // Para modo imagem com 'Baixar Todas', aguardar mais tempo para todas as imagens serem geradas
+            if (automationState.mode === 'image' && automationState.settings?.downloadAllImages) {
+                const waitTime = Math.max(30, automationState.delay * 2) * 1000; // Mínimo 30s ou 2x o delay
+                console.log(`⏳ Modo 'Baixar Todas': Aguardando ${waitTime/1000}s para todas as imagens serem geradas...`);
+                updateOverlay({
+                    status: `Aguardando imagens (${waitTime/1000}s)...`,
+                    prompt: currentPrompt,
+                    index: automationState.currentIndex + 1,
+                    total: automationState.prompts.length
+                });
+                await sleep(waitTime);
+            }
+            
             automationState.currentIndex++;
             automationState.promptsSinceLastBreak++;
             saveAutomationState(); // Persist progress immediately
