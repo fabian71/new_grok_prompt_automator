@@ -106,6 +106,20 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="section">
+                    <label class="label">Resolução:</label>
+                    <div class="radio-group" style="display: flex; gap: 15px; margin-bottom: 10px;">
+                        <div class="radio-container">
+                            <input type="radio" id="res-480p" name="resolution" value="480p" checked>
+                            <label for="res-480p">480p (Upscale)</label>
+                        </div>
+                        <div class="radio-container">
+                            <input type="radio" id="res-720p" name="resolution" value="720p">
+                            <label for="res-720p">720p (Nativo)</label>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div id="image-video-tab" class="tab-content">
@@ -115,6 +129,20 @@
                         <option value="6s">6s</option>
                         <option value="10s">10s</option>
                     </select>
+                </div>
+
+                <div class="section">
+                    <label class="label">Resolução:</label>
+                    <div class="radio-group" style="display: flex; gap: 15px; margin-bottom: 10px;">
+                        <div class="radio-container">
+                            <input type="radio" id="res-image-480p" name="resolution-image" value="480p" checked>
+                            <label for="res-image-480p">480p (Upscale)</label>
+                        </div>
+                        <div class="radio-container">
+                            <input type="radio" id="res-image-720p" name="resolution-image" value="720p">
+                            <label for="res-image-720p">720p (Nativo)</label>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="section">
@@ -160,23 +188,30 @@
                         <label for="toggle-break" class="label-dark">Habilitar Pausas Automáticas</label>
                     </div>
 
-                    <div id="break-settings" style="display: none; margin-top: 12px; padding: 12px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                    <div id="break-settings"
+                        style="display: none; margin-top: 12px; padding: 12px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                             <span class="label-dark">A cada</span>
-                            <input type="number" id="break-prompts" class="input input-inline" value="3" min="1" style="width: 60px; text-align: center;">
+                            <input type="number" id="break-prompts" class="input input-inline" value="3" min="1"
+                                style="width: 60px; text-align: center;">
                             <span class="label-dark">imagens/prompts</span>
                         </div>
 
-                        <div style="font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 10px;">Intervalo de pausa aleatório (minutos)</div>
+                        <div
+                            style="font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 10px;">
+                            Intervalo de pausa aleatório (minutos)</div>
 
                         <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
-                            <input type="number" id="break-min" class="input input-inline" value="1" min="1" style="width: 60px; text-align: center;">
+                            <input type="number" id="break-min" class="input input-inline" value="1" min="1"
+                                style="width: 60px; text-align: center;">
                             <span style="color: var(--text-muted);">—</span>
-                            <input type="number" id="break-max" class="input input-inline" value="6" min="1" style="width: 60px; text-align: center;">
+                            <input type="number" id="break-max" class="input input-inline" value="6" min="1"
+                                style="width: 60px; text-align: center;">
                             <span class="label-dark">min</span>
                         </div>
 
-                        <div id="break-badge" class="badge-pill" style="margin-top: 10px; text-align: center;">1 - 6 min</div>
+                        <div id="break-badge" class="badge-pill" style="margin-top: 10px; text-align: center;">1 - 6 min
+                        </div>
                     </div>
                 </div>
 
@@ -196,9 +231,12 @@
                             <label for="download-all-images-checkbox" class="label">🖼️ Baixar várias imagens</label>
                         </div>
                         <!-- Selectbox para quantidade de imagens (aparece quando 'Baixar várias' está marcado) -->
-                        <div id="download-multi-count-container" style="display: none; margin-left: 28px; margin-bottom: 8px;">
-                            <label for="download-multi-count" class="label" style="font-size: 12px; color: var(--text-muted);">Quantidade:</label>
-                            <select id="download-multi-count" class="input" style="width: 80px; padding: 4px 8px; font-size: 13px;">
+                        <div id="download-multi-count-container"
+                            style="display: none; margin-left: 28px; margin-bottom: 8px;">
+                            <label for="download-multi-count" class="label"
+                                style="font-size: 12px; color: var(--text-muted);">Quantidade:</label>
+                            <select id="download-multi-count" class="input"
+                                style="width: 80px; padding: 4px 8px; font-size: 13px;">
                                 <option value="2">2</option>
                                 <option value="3">3</option>
                                 <option value="4" selected>4</option>
@@ -215,11 +253,13 @@
                                 <option value="15">15</option>
                                 <option value="16">16</option>
                             </select>
-                            <span class="label" style="font-size: 12px; color: var(--text-muted);">imagens por prompt</span>
+                            <span class="label" style="font-size: 12px; color: var(--text-muted);">imagens por
+                                prompt</span>
                         </div>
                         <div class="checkbox-container">
                             <input type="checkbox" id="auto-download-prompt-checkbox">
-                            <label for="auto-download-prompt-checkbox" class="label">💾 Baixar prompt (arquivo .txt)</label>
+                            <label for="auto-download-prompt-checkbox" class="label">💾 Baixar prompt (arquivo
+                                .txt)</label>
                         </div>
                     </div>
                     <div id="specificDownloadFolderSection" style="margin-top: 10px;">

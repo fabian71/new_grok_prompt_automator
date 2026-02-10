@@ -85,7 +85,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             downloadSubfolder: downloadSubfolderName.value,
             breakPrompts: breakPrompts.value,
             breakMin: breakMin.value,
-            breakMax: breakMax.value,
+            // Resolution
+            resolution: document.querySelector('input[name="resolution"]:checked')?.value || '480p',
+            resolutionImage: document.querySelector('input[name="resolution-image"]:checked')?.value || '480p',
 
             // Random options (checkboxes individuais)
             randomOptions: Array.from(document.querySelectorAll('.random-option')).map(cb => ({
@@ -147,6 +149,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (popupSettings.breakMin) breakMin.value = popupSettings.breakMin;
             if (popupSettings.breakMax) breakMax.value = popupSettings.breakMax;
 
+            // Resolution
+            if (popupSettings.resolution) {
+                const radio = document.querySelector(`input[name="resolution"][value="${popupSettings.resolution}"]`);
+                if (radio) radio.checked = true;
+            }
+            if (popupSettings.resolutionImage) {
+                const radio = document.querySelector(`input[name="resolution-image"][value="${popupSettings.resolutionImage}"]`);
+                if (radio) radio.checked = true;
+            }
+
             // Random options
             if (popupSettings.randomOptions) {
                 popupSettings.randomOptions.forEach(opt => {
@@ -185,6 +197,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     breakPrompts.addEventListener('change', saveAllSettings);
     breakMin.addEventListener('change', saveAllSettings);
     breakMax.addEventListener('change', saveAllSettings);
+
+    // Resolution listeners
+    document.querySelectorAll('input[name="resolution"]').forEach(r => {
+        r.addEventListener('change', () => {
+            saveAllSettings();
+            updateUpscaleVisibility(); // Update upscale visibility when resolution changes
+        });
+    });
+    document.querySelectorAll('input[name="resolution-image"]').forEach(r => {
+        r.addEventListener('change', () => {
+            saveAllSettings();
+            updateUpscaleVisibility();
+        });
+    });
 
     // Salvar random options
     document.querySelectorAll('.random-option').forEach(cb => {
@@ -235,7 +261,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         autoDownloadPromptCheckbox.checked = savePromptTxt;
         console.log('💾 savePromptTxt carregado:', savePromptTxt);
     }
-    
+
     // Load active tab
     const { activeTab } = await chrome.storage.local.get('activeTab');
     if (activeTab) {
@@ -259,9 +285,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const activeTab = activeTabBtn.dataset.tab;
 
         if (activeTab === 'image-video-tab') {
-            // Em Image-to-Video, SEMPRE é vídeo, então upscale faz sentido
-            console.log('📹 Image-to-Video tab: Mostrando upscale');
-            upscaleContainer.style.display = 'flex';
+            // Check resolution for image mode
+            const res = document.querySelector('input[name="resolution-image"]:checked')?.value || '480p';
+            if (res === '720p') {
+                console.log('📹 Image-to-Video tab: 720p selecionado -> Upscale oculto');
+                upscaleContainer.style.display = 'none';
+            } else {
+                console.log('📹 Image-to-Video tab: 480p selecionado -> Upscale visível');
+                upscaleContainer.style.display = 'flex';
+            }
+
             if (videoDurationContainer) {
                 videoDurationContainer.style.display = 'block';
             }
@@ -270,11 +303,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const modeRadio = document.querySelector('input[name="generation-mode"]:checked');
             const mode = modeRadio ? modeRadio.value : 'image';
 
-            console.log(`🎯 Modo selecionado: ${mode}`);
+            // Check resolution for text mode
+            const res = document.querySelector('input[name="resolution"]:checked')?.value || '480p';
+
+            console.log(`🎯 Modo selecionado: ${mode}, Resolução: ${res}`);
 
             if (mode === 'video') {
-                console.log('✅ Modo Vídeo: Mostrando upscale');
-                upscaleContainer.style.display = 'flex';
+                if (res === '720p') {
+                    console.log('✅ Modo Vídeo (720p): Upscale oculto');
+                    upscaleContainer.style.display = 'none';
+                } else {
+                    console.log('✅ Modo Vídeo (480p): Mostrando upscale');
+                    upscaleContainer.style.display = 'flex';
+                }
+
                 if (videoDurationContainer) {
                     videoDurationContainer.style.display = 'block';
                 }
@@ -506,10 +548,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (videoDurationContainer) {
                 videoDurationContainer.style.display = mode === 'video' ? 'block' : 'none';
             }
-            
+
             // Save mode
             chrome.storage.local.set({ generationMode: mode });
-            
+
             // updateAutoDownloadOptions será chamado pelo listener adicionado depois
         });
     });
@@ -548,7 +590,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function syncDelayInputs(source, target) {
         target.value = source.value;
     }
-    
+
     if (delayInput && delayInputImage) {
         delayInput.addEventListener('input', () => {
             syncDelayInputs(delayInput, delayInputImage);
@@ -571,7 +613,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     });
-    
+
     // Delay warning para Image-to-Video
     if (delayInputImage) {
         delayInputImage.addEventListener('input', () => {
@@ -590,7 +632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     promptsTextarea.addEventListener('input', () => {
         chrome.storage.local.set({ promptsContent: promptsTextarea.value });
     });
-    
+
     // Save savePromptTxt immediately when changed
     if (autoDownloadPromptCheckbox) {
         autoDownloadPromptCheckbox.addEventListener('change', async () => {
@@ -604,17 +646,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadAllImagesCheckbox.addEventListener('change', async () => {
             await chrome.storage.local.set({ downloadAllImages: downloadAllImagesCheckbox.checked });
             console.log('🖼️ downloadAllImages salvo:', downloadAllImagesCheckbox.checked);
-            
+
             // Mostrar/esconder selectbox de quantidade
             if (downloadMultiCountContainer) {
                 const mode = document.querySelector('input[name="generation-mode"]:checked')?.value || 'video';
                 downloadMultiCountContainer.style.display = (downloadAllImagesCheckbox.checked && mode === 'image') ? 'block' : 'none';
             }
-            
+
             saveAllSettings();
         });
     }
-    
+
     // Save downloadMultiCount immediately when changed
     if (downloadMultiCount) {
         downloadMultiCount.addEventListener('change', async () => {
@@ -626,35 +668,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Auto download checkbox
     const autoDownloadOptions = document.getElementById('auto-download-options');
-    
+
     function updateAutoDownloadOptions() {
         const isChecked = autoDownloadCheckbox.checked;
         const mode = document.querySelector('input[name="generation-mode"]:checked')?.value || 'video';
-        
+
         // Mostrar/esconder opções condicionais
         if (autoDownloadOptions) {
             autoDownloadOptions.style.display = isChecked ? 'block' : 'none';
         }
-        
+
         // Atualizar visibilidade específica do "Baixar várias" baseado no modo
         if (downloadAllImagesContainer) {
             downloadAllImagesContainer.style.display = (isChecked && mode === 'image') ? 'flex' : 'none';
         }
-        
+
         // Mostrar/esconder selectbox de quantidade
         if (downloadMultiCountContainer) {
             downloadMultiCountContainer.style.display = (isChecked && mode === 'image' && downloadAllImagesCheckbox?.checked) ? 'block' : 'none';
         }
 
     }
-    
+
     autoDownloadCheckbox.addEventListener('change', updateAutoDownloadOptions);
-    
+
     // Atualizar quando mudar de modo também
     modeRadios.forEach(radio => {
         radio.addEventListener('change', updateAutoDownloadOptions);
     });
-    
+
     // Inicializar estado
     updateAutoDownloadOptions();
 
@@ -708,7 +750,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 breakEnabled: toggleBreak.checked,
                 breakPrompts: parseInt(breakPrompts.value),
                 breakDurationMin: parseInt(breakMin.value),
-                breakDurationMax: parseInt(breakMax.value)
+                breakDurationMax: parseInt(breakMax.value),
+                resolution: document.querySelector('input[name="resolution"]:checked')?.value || '480p'
             };
 
             await chrome.storage.local.set({
@@ -840,7 +883,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 breakEnabled: toggleBreak.checked,
                 breakPrompts: parseInt(breakPrompts.value),
                 breakDurationMin: parseInt(breakMin.value),
-                breakDurationMax: parseInt(breakMax.value)
+                breakDurationMax: parseInt(breakMax.value),
+                resolution: document.querySelector('input[name="resolution-image"]:checked')?.value || '480p'
             };
 
             await chrome.storage.local.set({
@@ -962,12 +1006,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Listen for progress updates
     chrome.runtime.onMessage.addListener((message) => {
+        console.log('[Popup] Mensagem recebida:', message.action);
         if (message.action === 'updateProgress') {
             progressInfo.textContent = message.text;
         } else if (message.action === 'automationComplete') {
+            console.log('[Popup] Automação completa, atualizando UI');
             updateUIState(false);
             statusText.textContent = 'Automação concluída!';
         } else if (message.action === 'automationError') {
+            console.log('[Popup] Erro na automação, atualizando UI');
             updateUIState(false);
             statusText.textContent = `Erro: ${message.error}`;
         }
@@ -980,11 +1027,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         promptsTextarea.value = promptsContent;
     }
 
+    console.log('[Popup] Estado carregado - automationActive:', automationActive);
+
     if (automationActive) {
         updateUIState(true);
         statusText.textContent = 'Automação em andamento...';
         if (automationProgress) {
             progressInfo.textContent = automationProgress;
         }
+    } else {
+        // Garantir que a UI esteja no estado correto quando não há automação ativa
+        updateUIState(false);
+        statusText.textContent = 'Pronto para iniciar';
     }
 });

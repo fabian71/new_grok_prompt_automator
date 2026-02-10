@@ -121,7 +121,10 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     request.action === "automationComplete" ||
     request.action === "automationError"
   ) {
-    chrome.runtime.sendMessage(request).catch(() => { });
+    console.log(`[BG] Encaminhando ${request.action} para popup`);
+    chrome.runtime.sendMessage(request).catch((err) => { 
+      console.log(`[BG] Erro ao encaminhar (popup pode estar fechado):`, err.message);
+    });
     sendResponse({ success: true });
     return true;
   }

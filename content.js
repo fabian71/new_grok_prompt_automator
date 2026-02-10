@@ -39,13 +39,32 @@
         breakEndTime: null
     };
 
+    // --- Keep-Alive para Service Worker ---
+    let keepAliveInterval = null;
+
+    function startKeepAlive() {
+        if (keepAliveInterval) return;
+        console.log('🔥 Keep-alive iniciado');
+        keepAliveInterval = setInterval(() => {
+            chrome.runtime.sendMessage({ action: 'ping' }).catch(() => { });
+        }, 20000); // Ping a cada 20 segundos
+    }
+
+    function stopKeepAlive() {
+        if (keepAliveInterval) {
+            console.log('🔥 Keep-alive parado');
+            clearInterval(keepAliveInterval);
+            keepAliveInterval = null;
+        }
+    }
+
     // --- Persistence Helpers ---
     async function saveAutomationState() {
         // Sync currentIndex with currentImageIndex for image-to-video mode before saving
         if (automationState.mode === 'image-to-video') {
             automationState.currentIndex = automationState.currentImageIndex;
         }
-        
+
         const stateToSave = {
             ...automationState,
             upscaledPrompts: Array.from(automationState.upscaledPrompts),
@@ -54,7 +73,7 @@
             processedVideoUrls: Array.from(automationState.processedVideoUrls)
         };
         delete stateToSave.timeoutId;
-        
+
         // Log para debug
         console.log('💾 Salvando estado:', {
             mode: stateToSave.mode,
@@ -64,12 +83,14 @@
             promptsLength: stateToSave.prompts?.length || 0,
             isRunning: stateToSave.isRunning
         });
-        
+
         await chrome.storage.local.set({ 'grokAutomationState': stateToSave });
     }
 
     async function clearAutomationState() {
         await chrome.storage.local.remove('grokAutomationState');
+        // Também atualizar automationActive para false
+        await chrome.storage.local.set({ automationActive: false });
     }
 
     async function loadAutomationState() {
@@ -92,7 +113,7 @@
                 // Additional validation: check if prompts exist OR imageQueue exists (for image-to-video mode)
                 const hasPrompts = saved.prompts && saved.prompts.length > 0;
                 const hasImageQueue = saved.imageQueue && saved.imageQueue.length > 0;
-                
+
                 if (!hasPrompts && !hasImageQueue) {
                     console.log('⚠️ Estado restaurado não tem prompts nem imageQueue. Limpando...');
                     await clearAutomationState();
@@ -135,7 +156,7 @@
                 const isComplete = automationState.mode === 'image-to-video'
                     ? automationState.currentImageIndex >= automationState.imageQueue.length
                     : automationState.currentIndex >= automationState.prompts.length;
-                    
+
                 if (isComplete) {
                     console.log('✅ Estado restaurado indica conclusão. Finalizando...');
                     handleAutomationComplete();
@@ -617,8 +638,8 @@
     async function sendMessageToBackground(message) {
         try {
             // Acordar Service Worker com ping primeiro
-            await chrome.runtime.sendMessage({ action: 'ping' }).catch(() => {});
-            
+            await chrome.runtime.sendMessage({ action: 'ping' }).catch(() => { });
+
             // Agora enviar mensagem real
             chrome.runtime.sendMessage(message, (response) => {
                 if (chrome.runtime.lastError) {
@@ -746,25 +767,25 @@
         while (!trigger && attempts < 15) {
             // Tentar múltiplos seletores
             trigger = document.getElementById('model-select-trigger') ||
-                      document.querySelector('button[aria-label="Seleção de modelo"]') ||
-                      document.querySelector('button[id*="model"]') ||
-                      document.querySelector('button:has(svg.lucide-play)');
-            
+                document.querySelector('button[aria-label="Seleção de modelo"]') ||
+                document.querySelector('button[id*="model"]') ||
+                document.querySelector('button:has(svg.lucide-play)');
+
             if (!trigger) {
                 console.log(`⏳ Aguardando botão de modelo... tentativa ${attempts + 1}/15`);
                 await sleep(500);
                 attempts++;
             }
         }
-        
+
         if (!trigger) {
             console.warn('❌ Botão de modelo não encontrado após 15 tentativas.');
-            console.log('🔍 Seletores disponíveis:', 
-                Array.from(document.querySelectorAll('button')).map(b => ({id: b.id, ariaLabel: b.getAttribute('aria-label'), text: b.textContent?.substring(0, 50)}))
+            console.log('🔍 Seletores disponíveis:',
+                Array.from(document.querySelectorAll('button')).map(b => ({ id: b.id, ariaLabel: b.getAttribute('aria-label'), text: b.textContent?.substring(0, 50) }))
             );
             return false;
         }
-        
+
         console.log('✅ Botão de modelo encontrado:', trigger.id || trigger.getAttribute('aria-label') || 'sem ID');
 
         const targetIsVideo = mode === 'video';
@@ -936,7 +957,7 @@
     }
 
     // --- Download Helper ---
-    const triggerDownload = (url, type, promptIndex = null) => {
+    const triggerDownload = async (url, type, promptIndex = null) => {
         // Determine correct index based on mode
         let actualIndex;
         if (promptIndex !== null && promptIndex >= 0) {
@@ -951,14 +972,14 @@
             // Para modo imagem, usar currentIndex - 1
             actualIndex = Math.max(0, automationState.currentIndex - 1);
         }
-        
+
         // Garantir que índice nunca seja negativo
         if (actualIndex < 0) {
             actualIndex = 0;
         }
-        
+
         console.log(`📥 triggerDownload: type=${type}, actualIndex=${actualIndex}, mode=${automationState.mode}, currentIndex=${automationState.currentIndex}`);
-        
+
         if (type === 'video' && automationState.downloadedVideos.has(actualIndex)) {
             console.log(`✅ Download já marcado para índice ${actualIndex}, ignorando duplicata.`);
             return;
@@ -972,25 +993,62 @@
         } else if (automationState.prompts) {
             prompt = automationState.prompts[actualIndex] || 'prompt_desconhecido';
         }
-        
+
         console.log(`📥 Nome do arquivo: ${prompt}`);
 
-        const send = (finalUrl) => {
-            setTimeout(() => {
-                console.log(`📤 Enviando para background: action=downloadImage, prompt=${prompt}`);
-                sendMessageToBackground({
-                    action: 'downloadImage',
-                    url: finalUrl,
-                    prompt: prompt,
-                    type: type
-                });
-                console.log(`📤 Mensagem enviada!`);
-                if (type === 'video') {
-                    automationState.downloadedVideos.add(actualIndex);
-                    // Salvar estado imediatamente após marcar download
-                    saveAutomationState();
+        const send = async (finalUrl) => {
+            await sleep(500);
+
+            // Tentar enviar mensagem com retry
+            let attempts = 0;
+            const maxAttempts = 3;
+            let success = false;
+
+            while (attempts < maxAttempts && !success) {
+                attempts++;
+                console.log(`📤 Enviando para background (tentativa ${attempts}/${maxAttempts}): action=downloadImage, prompt=${prompt}`);
+
+                try {
+                    const response = await new Promise((resolve) => {
+                        chrome.runtime.sendMessage({
+                            action: 'downloadImage',
+                            url: finalUrl,
+                            prompt: prompt,
+                            type: type
+                        }, (resp) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn(`⚠️ Erro na tentativa ${attempts}:`, chrome.runtime.lastError.message);
+                                resolve(null);
+                            } else {
+                                resolve(resp);
+                            }
+                        });
+                    });
+
+                    if (response) {
+                        console.log(`✅ Mensagem enviada com sucesso! Resposta:`, response);
+                        success = true;
+                    } else {
+                        console.warn(`⚠️ Tentativa ${attempts} falhou, aguardando antes de retry...`);
+                        await sleep(1000);
+                    }
+                } catch (error) {
+                    console.error(`❌ Erro ao enviar mensagem (tentativa ${attempts}):`, error);
+                    await sleep(1000);
                 }
-            }, 500);
+            }
+
+            if (!success) {
+                console.error(`❌ Falhou ao enviar mensagem após ${maxAttempts} tentativas`);
+                return;
+            }
+
+            // Só marcar como baixado se o envio foi bem-sucedido
+            if (type === 'video') {
+                console.log(`✅ Marcando vídeo ${actualIndex} como baixado`);
+                automationState.downloadedVideos.add(actualIndex);
+                saveAutomationState();
+            }
         };
 
         // Se o vídeo vier como blob:, converte para data URL
@@ -1201,6 +1259,7 @@
     }
 
     function handleAutomationComplete() {
+        console.log('🏁 handleAutomationComplete chamado');
         const totalPrompts = automationState.prompts?.length || 0;
         sendMessageToBackground({
             action: 'automationComplete',
@@ -1214,6 +1273,7 @@
         });
         // Overlay permanece visível para o usuário ver o resultado
         resetAutomation();
+        console.log('🏁 Automação finalizada e estado resetado');
     }
 
     function resetAutomation() {
@@ -1235,6 +1295,7 @@
         clearAutomationState();
         clearOverlay();
         stopOverlayTimer();
+        stopKeepAlive(); // Parar keep-alive
     }
 
     async function runAutomation() {
@@ -1275,6 +1336,26 @@
             console.log(`🎯 Selecionando modo ${automationState.mode} antes do prompt...`);
             await selectGenerationMode(automationState.mode);
             automationState.modeApplied = true;
+
+            // Selecionar duração do vídeo após selecionar o modo
+            // Garantir que o menu esteja fechado antes de selecionar duração
+            document.body.click();
+            await sleep(500);
+
+            if (automationState.mode === 'video' && automationState.settings?.videoDuration) {
+                console.log(`⏱️ Selecionando duração ${automationState.settings.videoDuration}...`);
+                const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
+                console.log(`📊 Resultado seleção duração: ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
+                await sleep(800);
+            }
+
+            // Selecionar resolução
+            if (automationState.mode === 'video') {
+                const resolution = automationState.settings?.resolution || '480p';
+                console.log(`⏱️ Selecionando resolução ${resolution}...`);
+                await selectResolution(resolution);
+                await sleep(500);
+            }
         }
 
         if (automationState.settings?.randomize && automationState.settings?.aspectRatios && automationState.settings.aspectRatios.length > 0) {
@@ -1301,13 +1382,13 @@
 
         try {
             await sleep(500);
-            
+
             // Registrar o índice do prompt que está sendo enviado
             automationState.lastPromptSentIndex = automationState.currentIndex;
             console.log(`📝 Registrando envio do prompt[${automationState.currentIndex}]: "${currentPrompt.substring(0, 40)}..."`);
-            
+
             await submitPrompt(currentPrompt, currentAspectRatio);
-            
+
             // Para modo vídeo, precisamos esperar a geração completar antes de avançar
             if (automationState.mode === 'video') {
                 console.log('⏳ Modo vídeo: Aguardando geração do vídeo antes de avançar...');
@@ -1317,56 +1398,49 @@
                     index: automationState.currentIndex + 1,
                     total: automationState.prompts.length
                 });
-                
-                // Aguardar geração do vídeo - ULTRA AGRESSIVO
-                const maxWaitTime = automationState.settings?.upscale ? 80000 : 50000;
+
+                // Aguardar geração do vídeo - AUMENTADO PARA 720p/HD
+                const maxWaitTime = automationState.settings?.upscale ? 240000 : 180000; // 4 min upscale, 3 min normal
                 const checkInterval = 1500;
                 let elapsed = 0;
                 let videoComplete = false;
                 const currentPromptIndex = automationState.currentIndex;
-                
+
                 while (elapsed < maxWaitTime && !videoComplete) {
                     await sleep(checkInterval);
                     elapsed += checkInterval;
-                    
+
                     // Verificar se vídeo foi baixado
+                    console.log(`⏳ [Espera vídeo] Verificando índice ${currentPromptIndex}, downloadedVideos size: ${automationState.downloadedVideos.size}, conteúdo: [${Array.from(automationState.downloadedVideos).join(', ')}]`);
                     if (automationState.downloadedVideos.has(currentPromptIndex)) {
                         console.log(`✅ Vídeo do prompt ${currentPromptIndex + 1} baixado!`);
                         videoComplete = true;
                         break;
                     }
-                    
-                    // Timeouts de segurança - ULTRA REDUZIDOS
-                    if (!automationState.settings?.upscale && elapsed >= 30000) {
-                        console.log('⏱️ Timeout mínimo atingido (30s), prosseguindo...');
-                        videoComplete = true;
-                        break;
-                    }
-                    if (automationState.settings?.upscale && elapsed >= 65000) {
-                        console.log('⏱️ Timeout upscale atingido (65s), prosseguindo...');
-                        videoComplete = true;
-                        break;
-                    }
+
+                    // Timeouts removidos a pedido do usuário
+                    // "ele so deve mudar se ele identificar que gerrou"
+                    // Mantemos apenas o maxWaitTime global de segurança
                 }
-                
+
                 if (!videoComplete) {
                     console.log('⏱️ Timeout máximo atingido, prosseguindo...');
                 }
             }
-            
+
             // Para modo imagem com 'Baixar Todas', aguardar mais tempo para todas as imagens serem geradas
             if (automationState.mode === 'image' && automationState.settings?.downloadAllImages) {
                 const waitTime = Math.max(30, automationState.delay * 2) * 1000; // Mínimo 30s ou 2x o delay
-                console.log(`⏳ Modo 'Baixar Todas': Aguardando ${waitTime/1000}s para todas as imagens serem geradas...`);
+                console.log(`⏳ Modo 'Baixar Todas': Aguardando ${waitTime / 1000}s para todas as imagens serem geradas...`);
                 updateOverlay({
-                    status: `Aguardando imagens (${waitTime/1000}s)...`,
+                    status: `Aguardando imagens (${waitTime / 1000}s)...`,
                     prompt: currentPrompt,
                     index: automationState.currentIndex + 1,
                     total: automationState.prompts.length
                 });
                 await sleep(waitTime);
             }
-            
+
             automationState.currentIndex++;
             automationState.promptsSinceLastBreak++;
             automationState.imagesDownloadedCount = 0; // Reset contador de imagens baixadas
@@ -1414,14 +1488,14 @@
             // Se for o último prompt, aguardar download da imagem antes de finalizar
             if (automationState.isRunning && automationState.currentIndex >= automationState.prompts.length) {
                 console.log('✅ Último prompt processado, aguardando download da imagem...');
-                
+
                 // Aguardar até que o download seja iniciado ou timeout
                 let waitAttempts = 0;
                 const maxWaitAttempts = 120; // 60 segundos (500ms * 120)
-                
+
                 const waitForDownload = setInterval(() => {
                     waitAttempts++;
-                    
+
                     // Verificar se o download foi iniciado
                     if (automationState.imageDownloadInitiated) {
                         clearInterval(waitForDownload);
@@ -1432,7 +1506,7 @@
                         }, 2000);
                         return;
                     }
-                    
+
                     // Timeout após 60 segundos
                     if (waitAttempts >= maxWaitAttempts) {
                         clearInterval(waitForDownload);
@@ -1440,13 +1514,13 @@
                         handleAutomationComplete();
                         return;
                     }
-                    
+
                     // Log a cada 5 segundos
                     if (waitAttempts % 10 === 0) {
                         console.log(`⏳ Aguardando download da última imagem... ${(waitAttempts * 0.5).toFixed(0)}s`);
                     }
                 }, 500);
-                
+
                 return;
             }
         } catch (error) {
@@ -1462,7 +1536,7 @@
     }
 
     // --- Image-to-Video Helpers (defined at module level for scope access) ---
-    
+
     // Helper: Convert base64 data URL to File object
     function dataURLtoFile(dataUrl, filename) {
         // Remove data:image/jpeg;base64, prefix if present
@@ -1470,14 +1544,14 @@
         if (base64.includes(',')) {
             base64 = base64.split(',')[1];
         }
-        
+
         // Decode base64
         const byteString = atob(base64);
         const byteArray = new Array(byteString.length);
         for (let i = 0; i < byteString.length; i++) {
             byteArray[i] = byteString.charCodeAt(i);
         }
-        
+
         const uint8Array = new Uint8Array(byteArray);
         const blob = new Blob([uint8Array], { type: 'image/jpeg' });
         return new File([blob], filename, { type: 'image/jpeg' });
@@ -1492,7 +1566,7 @@
             'div[contenteditable="true"]',
             '.query-bar div[contenteditable="true"]'
         ];
-        
+
         for (const selector of selectors) {
             const editor = document.querySelector(selector);
             if (editor) {
@@ -1500,17 +1574,17 @@
                 return editor;
             }
         }
-        
+
         return null;
     }
 
     // Helper: Upload image to Grok via file input
     async function uploadImageToGrok(imageData, filename) {
         console.log('📤 Procurando input[type="file"] na página...');
-        
+
         // Find file input - try multiple strategies
         let fileInput = document.querySelector('input[type="file"]');
-        
+
         if (!fileInput) {
             // Try to find in the query-bar container
             const queryBar = document.querySelector('.query-bar') || document.querySelector('div[class*="query"]');
@@ -1518,7 +1592,7 @@
                 fileInput = queryBar.querySelector('input[type="file"]');
             }
         }
-        
+
         if (!fileInput) {
             // Try to find by looking for hidden inputs anywhere
             const allInputs = document.querySelectorAll('input[type="file"]');
@@ -1526,17 +1600,17 @@
                 fileInput = allInputs[0];
             }
         }
-        
+
         // If still not found, we might need to click the attach button first to create it
         if (!fileInput) {
             console.log('⚠️ Input de arquivo não encontrado, tentando clicar no botão Anexar...');
-            const attachBtn = document.querySelector('button[aria-label="Anexar"]') || 
-                             document.querySelector('button svg path[d*="M10 9V15"]')?.closest('button');
-            
+            const attachBtn = document.querySelector('button[aria-label="Anexar"]') ||
+                document.querySelector('button svg path[d*="M10 9V15"]')?.closest('button');
+
             if (attachBtn) {
                 forceClick(attachBtn);
                 await sleep(1000);
-                
+
                 // Try to find the menu item "Carregar um arquivo" and click it
                 const menuItems = document.querySelectorAll('[role="menuitem"]');
                 for (const item of menuItems) {
@@ -1553,39 +1627,39 @@
                         }
                     }
                 }
-                
+
                 // Now try to find the file input again
                 fileInput = document.querySelector('input[type="file"]');
             }
         }
-        
+
         if (!fileInput) {
             throw new Error('Input de arquivo não encontrado na página');
         }
-        
+
         console.log('✅ Input de arquivo encontrado:', fileInput);
-        
+
         // Convert base64 to File
         console.log('💾 Convertendo base64 para File...');
         const file = dataURLtoFile(imageData, filename);
-        
+
         // Create DataTransfer and add file
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
-        
+
         // Set files on input
         fileInput.files = dataTransfer.files;
-        
+
         // Dispatch change event to trigger upload
         console.log('🚀 Disparando evento change no input...');
         const changeEvent = new Event('change', { bubbles: true });
         fileInput.dispatchEvent(changeEvent);
-        
+
         // Also dispatch input event for React compatibility
         const inputEvent = new Event('input', { bubbles: true });
         Object.defineProperty(inputEvent, 'target', { writable: false, value: fileInput });
         fileInput.dispatchEvent(inputEvent);
-        
+
         return true;
     }
 
@@ -1596,32 +1670,35 @@
             '6s': ['6', '6s', '6 seconds'],
             '10s': ['10', '10s', '10 seconds']
         };
-        
+
         const possibleValues = durationMap[targetDuration] || [targetDuration];
-        
+
         console.log(`🎯 Selecionando duração: ${targetDuration}`);
-        
-        // Abrir o menu de modelo clicando no trigger
+
+        // Abrir o menu de modelo clicando no trigger (mesmos seletores de selectGenerationMode)
         const trigger = document.getElementById('model-select-trigger') ||
-                       document.querySelector('button[aria-label="Seleção de modelo"]') ||
-                       document.querySelector('button:has(svg.lucide-play)');
-                       
+            document.querySelector('button[aria-label="Seleção de modelo"]') ||
+            document.querySelector('button[id*="model"]') ||
+            document.querySelector('button:has(svg.lucide-play)');
+
         if (!trigger) {
             console.warn('⚠️ Trigger de modelo não encontrado');
             return false;
         }
-        
+
         console.log('🔔 Abrindo menu de modelo...');
+        console.log('🔍 Trigger encontrado:', trigger.outerHTML.substring(0, 200));
         forceClick(trigger);
-        await sleep(1000); // Aguardar um pouco mais para o menu abrir completamente
-        
+        await sleep(1500); // Aguardar um pouco mais para o menu abrir completamente
+
         // A duração está no menu de modelo, dentro de um menuitem com botões
         // Estrutura: <div role="menuitem"><p>Duração do Vídeo</p><div><button>6s</button><button>10s</button></div></div>
-        
+
         // Procurar o menuitem que contém "Duração"
         const menuItems = findAllElements('[role="menuitem"]');
+        console.log(`🔍 ${menuItems.length} menuitems encontrados`);
         let durationMenuItem = null;
-        
+
         for (const item of menuItems) {
             const itemText = normalizeText(item.textContent);
             if (/duracao|duration|duración/i.test(itemText)) {
@@ -1630,60 +1707,131 @@
                 break;
             }
         }
-        
+
         if (!durationMenuItem) {
             console.warn('⚠️ Menu de duração não encontrado no menu aberto');
             // Fechar menu clicando fora
             document.body.click();
             return false;
         }
-        
+
         // Procurar botões dentro do menuitem de duração
         const durationButtons = durationMenuItem.querySelectorAll('button');
         console.log(`🔍 ${durationButtons.length} botões de duração encontrados`);
-        
+
         if (durationButtons.length === 0) {
             console.warn('⚠️ Nenhum botão de duração encontrado no menuitem');
             document.body.click();
             return false;
         }
-        
+
         for (const btn of durationButtons) {
             const btnText = normalizeText(btn.textContent);
             const ariaLabel = btn.getAttribute('aria-label') || '';
             console.log(`  - Botão: "${btnText}" (aria-label: "${ariaLabel}")`);
-            
+
             // Verificar se o botão corresponde à duração desejada
-            const isMatch = possibleValues.some(val => 
-                btnText === val.toLowerCase() || 
+            const isMatch = possibleValues.some(val =>
+                btnText === val.toLowerCase() ||
                 ariaLabel === val ||
                 btnText.includes(val.toLowerCase())
             );
-            
+
             if (isMatch) {
                 console.log(`✅ Duração ${targetDuration} encontrada, clicando...`);
+                console.log('🔍 Botão HTML:', btn.outerHTML.substring(0, 150));
                 forceClick(btn);
-                await sleep(800); // Aguardar mais para a seleção ser aplicada
-                
+                await sleep(1000); // Aguardar mais para a seleção ser aplicada
+
                 // Verificar se a duração foi selecionada (botão deve ter classe ativa)
-                const isSelected = btn.classList.contains('text-primary') || 
-                                  btn.classList.contains('font-semibold') ||
-                                  btn.getAttribute('aria-pressed') === 'true';
-                
+                const isSelected = btn.classList.contains('text-primary') ||
+                    btn.classList.contains('font-semibold') ||
+                    btn.getAttribute('aria-pressed') === 'true';
+
                 console.log(`📊 Botão selecionado: ${isSelected}`);
+
+                // Fechar menu clicando fora
+                document.body.click();
+                await sleep(300);
+
                 return true;
             }
         }
-        
+
         console.warn(`⚠️ Duração ${targetDuration} não encontrada entre os botões`);
         console.log('🔍 Botões disponíveis:', Array.from(durationButtons).map(b => ({
             text: normalizeText(b.textContent),
             ariaLabel: b.getAttribute('aria-label'),
             classes: b.className
         })));
-        
+
         // Fechar menu clicando fora
         document.body.click();
+        await sleep(300);
+        return false;
+    }
+
+    // Helper: Select Resolution
+    async function selectResolution(targetResolution) {
+        const target = targetResolution || '480p'; // default 480p
+        console.log(`🎯 Selecionando resolução: ${target}`);
+
+        // Find resolution buttons
+        // They are usually visible directly on the UI or inside a menu? 
+        // User provided: <div class="flex flex-row gap-0"><button ... aria-label="480p">480p</button><button ... aria-label="720p">720p</button></div>
+        // Assuming they are visible BEFORE prompt submission
+
+        // Strategy 1: Find by aria-label directly
+        let btn = document.querySelector(`button[aria-label="${target}"]`);
+
+        // Strategy 2: Find by text content
+        if (!btn) {
+            const buttons = findAllElements('button');
+            btn = buttons.find(b => normalizeText(b.textContent) === target);
+        }
+
+        // Strategy 3: Maybe inside a menu? (Similar to selectVideoDuration)
+        // User said: "vcs escolhe o 480p ou 720p antes de enciar o prompt.. essa escolha da resolucao pode ser apos de escolher a propocao do video"
+        // It might be in the same "model-select-trigger" menu OR standalone.
+        // User provided HTML suggests they are standalone buttons in a flex container.
+
+        if (btn) {
+            console.log(`✅ Botão de resolução ${target} encontrado! Clicando...`);
+            forceClick(btn);
+            await sleep(500);
+            return true;
+        }
+
+        console.warn(`⚠️ Botão de resolução ${target} não encontrado na interface principal.`);
+
+        // Fallback: Check inside model menu (just in case)
+        const trigger = document.getElementById('model-select-trigger') ||
+            document.querySelector('button[aria-label="Seleção de modelo"]') ||
+            document.querySelector('button[id*="model"]') ||
+            document.querySelector('button:has(svg.lucide-play)');
+
+        if (trigger) {
+            console.log('🔍 Verificando menu de modelo para resolução...');
+            forceClick(trigger);
+            await sleep(1000);
+
+            const menuItems = findAllElements('[role="menuitem"] button');
+            btn = Array.from(menuItems).find(b =>
+                normalizeText(b.textContent) === target ||
+                b.getAttribute('aria-label') === target
+            );
+
+            if (btn) {
+                console.log(`✅ Botão de resolução ${target} encontrado no menu! Clicando...`);
+                forceClick(btn);
+                await sleep(500);
+                document.body.click(); // Close menu
+                return true;
+            }
+
+            document.body.click(); // Close menu
+        }
+
         return false;
     }
 
@@ -1696,7 +1844,7 @@
         // Check if we're on a post page - redirect to /imagine if so
         const isPostPage = window.location.pathname.includes('/imagine/post/');
         const hasTrigger = document.getElementById('model-select-trigger');
-        
+
         if (isPostPage || !hasTrigger) {
             console.log(`🔄 Redirecionando para /imagine... (isPostPage=${isPostPage}, hasTrigger=${!!hasTrigger})`);
             await saveAutomationState();
@@ -1729,7 +1877,7 @@
             // ========== STEP 1: Upload Image via File Input ==========
             console.log('📤 Step 1: Fazendo upload da imagem...');
             console.log(`📊 Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
-            
+
             // Wait for UI to be ready - look for the contenteditable editor
             let editor = findEditor();
             let attempts = 0;
@@ -1739,14 +1887,14 @@
                 editor = findEditor();
                 attempts++;
             }
-            
+
             if (!editor) {
                 throw new Error('Editor não encontrado na página após 10 tentativas');
             }
-            
+
             console.log('✅ Editor pronto, aguardando 1.5s antes do upload...');
             await sleep(1500);
-            
+
             // Upload image using file input method (like autogrok does)
             try {
                 await uploadImageToGrok(imgData.data, currentImage.name);
@@ -1755,7 +1903,7 @@
                 console.error('❌ Erro no upload:', uploadError);
                 throw uploadError;
             }
-            
+
             // Wait for image to be processed and thumbnail to appear
             updateOverlay({
                 status: 'Aguardando processamento...',
@@ -1763,15 +1911,15 @@
                 index: automationState.currentImageIndex + 1,
                 total: automationState.imageQueue.length
             });
-            
+
             // Aguardar processamento da imagem (preview/thumbnail) - REDUZIDO
             console.log('⏳ Aguardando 5s para processamento da imagem...');
             await sleep(5000);
-            
+
             // Verificar se imagem apareceu (opcional - debug)
-            const hasImagePreview = document.querySelector('img[src^="blob:"]') || 
-                                    document.querySelector('[data-testid="drop-ui"]') ||
-                                    document.querySelector('.query-bar img');
+            const hasImagePreview = document.querySelector('img[src^="blob:"]') ||
+                document.querySelector('[data-testid="drop-ui"]') ||
+                document.querySelector('.query-bar img');
             console.log(hasImagePreview ? '✅ Preview de imagem detectado' : '⚠️ Preview de imagem não detectado, mas continuando...');
 
             // ========== STEP 2: Select Video Mode ==========
@@ -1782,7 +1930,7 @@
                 index: automationState.currentImageIndex + 1,
                 total: automationState.imageQueue.length
             });
-            
+
             const modeSelected = await selectGenerationMode('video');
             if (!modeSelected) {
                 console.warn('⚠️ Não conseguiu selecionar modo vídeo, tentando continuar...');
@@ -1798,10 +1946,27 @@
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
-                
-                await selectVideoDuration(automationState.settings.videoDuration);
+
+                // Garantir que o menu esteja fechado antes de selecionar duração
+                document.body.click();
+                await sleep(500);
+
+                const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
+                console.log(`📊 Resultado seleção duração (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
                 await sleep(1000);
             }
+
+            // ========== STEP 3.5: Select Resolution ==========
+            const resolution = automationState.settings?.resolution || '480p';
+            console.log(`⏱️ Step 3.5: Selecionando resolução ${resolution}...`);
+            updateOverlay({
+                status: `Configurando resolução ${resolution}...`,
+                prompt: `Imagem: ${currentImage.name}`,
+                index: automationState.currentImageIndex + 1,
+                total: automationState.imageQueue.length
+            });
+            await selectResolution(resolution);
+            await sleep(800);
 
             // ========== STEP 4: Submit ==========
             console.log('🚀 Step 4: Enviando...');
@@ -1811,7 +1976,7 @@
                 index: automationState.currentImageIndex + 1,
                 total: automationState.imageQueue.length
             });
-            
+
             // Try multiple submit button selectors
             const submitSelectors = [
                 'button[type="submit"]',
@@ -1820,7 +1985,7 @@
                 'button:has(svg.stroke-\\[2\\])',
                 'button[data-slot="button"]:has(svg)'
             ];
-            
+
             let submitClicked = false;
             for (const selector of submitSelectors) {
                 const submitBtn = document.querySelector(selector);
@@ -1831,7 +1996,7 @@
                     break;
                 }
             }
-            
+
             if (!submitClicked) {
                 // Fallback: try Enter key on editor
                 const editor = findEditor();
@@ -1852,27 +2017,27 @@
                 index: automationState.currentImageIndex + 1,
                 total: automationState.imageQueue.length
             });
-            
+
             // Wait for video generation - MutationObserver will handle upscale and download
-            // ULTRA AGRESSIVE TIMING: Poll every 1.5 seconds, shorter max wait
-            const maxWaitTime = automationState.settings?.upscale ? 80000 : 50000; 
+            // AUMENTADO PARA 720p/HD
+            const maxWaitTime = automationState.settings?.upscale ? 240000 : 180000;
             const checkInterval = 1500; // Check every 1.5 seconds
             let elapsed = 0;
             let processingComplete = false;
             let lastDownloadCheck = false;
-            
+
             while (elapsed < maxWaitTime && !processingComplete) {
                 await sleep(checkInterval);
                 elapsed += checkInterval;
-                
+
                 // Check if video was downloaded (means processing is done)
                 const isDownloaded = automationState.downloadedVideos.has(automationState.currentImageIndex);
                 const isUpscaled = automationState.upscaledPrompts.has(automationState.currentImageIndex);
-                
+
                 if (isDownloaded && !lastDownloadCheck) {
-                    console.log(`✅ Download detectado após ${elapsed/1000}s`);
+                    console.log(`✅ Download detectado após ${elapsed / 1000}s`);
                     lastDownloadCheck = true;
-                    
+
                     // If upscale not enabled, we can proceed immediately after download
                     if (!automationState.settings?.upscale) {
                         console.log('✅ Sem upscale, prosseguindo imediatamente...');
@@ -1880,30 +2045,20 @@
                         break;
                     }
                 }
-                
+
                 // If upscale enabled, check both conditions
                 if (automationState.settings?.upscale && isDownloaded && isUpscaled) {
-                    console.log(`✅ Upscale + download completos em ${elapsed/1000}s!`);
+                    console.log(`✅ Upscale + download completos em ${elapsed / 1000}s!`);
                     processingComplete = true;
                     break;
                 }
-                
-                // Minimum wait time safeguards (ultra reduced)
-                if (!automationState.settings?.upscale && elapsed >= 30000 && !processingComplete) {
-                    console.log('⏱️ Tempo mínimo sem upscale atingido (30s), prosseguindo...');
-                    processingComplete = true;
-                    break;
-                }
-                
-                if (automationState.settings?.upscale && elapsed >= 65000 && !processingComplete) {
-                    console.log('⏱️ Timeout upscale (65s), prosseguindo...');
-                    processingComplete = true;
-                    break;
-                }
+
+                // Timeouts removidos a pedido do usuário
+                // Mantemos apenas o maxWaitTime global de segurança
             }
-            
+
             if (!processingComplete) {
-                console.log(`⏱️ Timeout máximo (${maxWaitTime/1000}s), prosseguindo...`);
+                console.log(`⏱️ Timeout máximo (${maxWaitTime / 1000}s), prosseguindo...`);
             }
 
             // ========== STEP 6: Next Image ==========
@@ -1920,7 +2075,7 @@
                 index: automationState.currentImageIndex,
                 total: automationState.imageQueue.length
             });
-            
+
             await sleep(reloadDelay * 1000);
 
             console.log('🔄 Recarregando página para próxima imagem...');
@@ -1931,7 +2086,7 @@
             console.error('❌ Erro:', error);
             automationState.currentImageIndex++;
             await saveAutomationState();
-            
+
             console.log('🔄 Reload de emergência em 5s...');
             setTimeout(() => {
                 window.location.href = 'https://grok.com/imagine';
@@ -1979,8 +2134,16 @@
                 downloadMultiCount: config.downloadMultiCount || 4,
                 breakEnabled: config.breakEnabled || false,
                 breakPrompts: config.breakPrompts || 90,
-                breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3)
+                breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3),
+                videoDuration: config.videoDuration || null,
+                resolution: config.resolution || '480p'
             };
+
+            // Force disable upscale if resolution is 720p
+            if (automationState.settings.resolution === '720p') {
+                automationState.settings.upscale = false;
+                console.log('ℹ️ Resolução 720p selecionada: Upscale desabilitado automaticamente.');
+            }
             automationState.mode = config.mode || 'image';
             automationState.modeApplied = false;
             automationState.currentIndex = 0;
@@ -2002,6 +2165,7 @@
             });
 
             startOverlayTimer();
+            startKeepAlive(); // Iniciar keep-alive para Service Worker
             runAutomation();
             sendResponse({ status: 'started' });
             return true;
@@ -2044,8 +2208,15 @@
                     breakEnabled: config.breakEnabled || false,
                     breakPrompts: config.breakPrompts || 90,
                     breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3),
-                    videoDuration: config.videoDuration || '6s'
+                    videoDuration: config.videoDuration || '6s',
+                    resolution: config.resolution || '480p'
                 };
+
+                // Force disable upscale if resolution is 720p
+                if (automationState.settings.resolution === '720p') {
+                    automationState.settings.upscale = false;
+                    console.log('ℹ️ Resolução 720p selecionada: Upscale desabilitado automaticamente.');
+                }
                 automationState.mode = 'image-to-video';
                 automationState.modeApplied = false;
                 automationState.currentIndex = 0;
@@ -2063,6 +2234,7 @@
                 });
 
                 startOverlayTimer();
+                startKeepAlive(); // Iniciar keep-alive para Service Worker
                 runImageToVideoAutomation();
             });
 
@@ -2122,7 +2294,7 @@
             currentPromptIndex = Math.max(0, automationState.processedVideoUrls.size - 1);
         }
         const shouldUpscale = automationState.settings?.upscale;
-        
+
         console.log(`🎬 [processVideoElement] Processando vídeo - índice: ${currentPromptIndex}, modo: ${automationState.mode}, currentIndex: ${automationState.currentIndex}`);
 
         // Prevent duplicate processing
@@ -2148,23 +2320,23 @@
                     automationState.upscaledPrompts.add(currentPromptIndex);
 
                     if (result.method === 'extension' && result.url) {
-                        triggerDownload(result.url, 'video', currentPromptIndex);
+                        await triggerDownload(result.url, 'video', currentPromptIndex);
                     } else if (result.method === 'click') {
                         const clicked = clickVideoDownloadButton();
                         if (!clicked) {
                             console.warn('⚠ Botão de download não encontrado após upscale, tentando src do vídeo.');
-                            triggerDownload(video.src, 'video', currentPromptIndex);
+                            await triggerDownload(video.src, 'video', currentPromptIndex);
                         }
                     }
-                    
+
                     // Se for o último, finalizar
                     if (automationState.currentIndex >= automationState.prompts.length) {
                         handleAutomationComplete();
                     }
                 } else {
                     console.warn(`⚠️ Upscale falhou para prompt ${currentPromptIndex}. Baixando vídeo SD.`);
-                    triggerDownload(video.src, 'video', currentPromptIndex);
-                    
+                    await triggerDownload(video.src, 'video', currentPromptIndex);
+
                     // Se for o último, finalizar mesmo com falha no upscale
                     if (automationState.currentIndex >= automationState.prompts.length) {
                         handleAutomationComplete();
@@ -2174,8 +2346,8 @@
                 automationState.processingPrompts.delete(currentPromptIndex); // Unlock
             } else {
                 console.log('📥 Fazendo download do vídeo SD (upscale desabilitado)');
-                triggerDownload(video.src, 'video', currentPromptIndex);
-                
+                await triggerDownload(video.src, 'video', currentPromptIndex);
+
                 // Se for o último, finalizar
                 if (automationState.currentIndex >= automationState.prompts.length) {
                     handleAutomationComplete();
@@ -2216,7 +2388,7 @@
 
     // Flag para evitar downloads duplicados simultâneos
     let isDownloadingAllImages = false;
-    
+
     // Função para baixar todas as imagens válidas de uma vez
     async function downloadAllImagesFromItems() {
         if (!automationState.isRunning || !automationState.settings?.downloadAllImages) return;
@@ -2224,112 +2396,112 @@
             console.log('⏳ Download de todas as imagens já em andamento, ignorando...');
             return;
         }
-        
+
         isDownloadingAllImages = true;
-        
+
         try {
-        // Obter o índice do prompt atual
-        // Usar lastPromptSentIndex se disponível, senão calcular baseado em currentIndex
-        const currentPromptIdx = automationState.lastPromptSentIndex >= 0 
-            ? automationState.lastPromptSentIndex 
-            : Math.max(0, automationState.currentIndex - 1);
-        const currentPrompt = automationState.prompts[currentPromptIdx];
-        
-        if (!currentPrompt) {
-            console.log('⚠️ Prompt atual não encontrado, cancelando download...');
-            isDownloadingAllImages = false;
-            return;
-        }
-        
-        const allItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-all-images-processed="true"])'));
-        if (allItems.length === 0) {
-            isDownloadingAllImages = false;
-            return;
-        }
-        
-        console.log(`🖼️ Modo 'Baixar Todas': Prompt[${currentPromptIdx}] "${currentPrompt.substring(0, 30)}..." - Verificando ${allItems.length} itens...`);
-        
-        // Função para verificar se a imagem é válida
-        function checkImageValid(item) {
-            const image = item.querySelector('img[src^="data:image/"]');
-            if (!image || !image.src) return null;
-            
-            const src = image.src;
-            const isPng = src.startsWith('data:image/png');
-            const isJpeg = src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
-            const isWebp = src.startsWith('data:image/webp');
-            
-            const base64Length = src.split(',')[1]?.length || 0;
-            const approxSizeBytes = base64Length * 0.75;
-            const approxSizeKB = approxSizeBytes / 1024;
-            
-            return {
-                valid: (isJpeg || isWebp) && approxSizeKB >= 100,
-                isPlaceholder: isPng,
-                isJpeg,
-                isWebp,
-                sizeKB: approxSizeKB,
-                src: src,
-                item: item
-            };
-        }
-        
-        // Verificar se já atingimos o limite de downloads para este prompt
-        const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
-        const alreadyDownloaded = automationState.imagesDownloadedCount || 0;
-        if (alreadyDownloaded >= maxImagesPerPrompt) {
-            console.log(`✅ Limite de ${maxImagesPerPrompt} imagens já atingido para este prompt.`);
-            isDownloadingAllImages = false;
-            return;
-        }
-        
-        console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
-        
-        // Baixar apenas as imagens do prompt atual
-        let downloadedCount = alreadyDownloaded;
-        
-        // Processar itens na ordem do DOM
-        for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
-            const item = allItems[i];
-            const check = checkImageValid(item);
-            
-            if (!check) continue;
-            
-            if (check.valid) {
-                const imageNumber = downloadedCount + 1;
-                const promptName = currentPrompt;
-                
-                console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
-                item.dataset.gpaAllImagesProcessed = 'true';
-                automationState.imagesDownloadedCount = downloadedCount + 1;
-                
-                // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
-                // Temporariamente modificar o prompt para incluir número da imagem
-                const originalPrompt = automationState.prompts[currentPromptIdx];
-                automationState.prompts[currentPromptIdx] = `${originalPrompt}_${imageNumber}`;
-                triggerDownload(check.src, 'image', currentPromptIdx);
-                // Restaurar prompt original
-                automationState.prompts[currentPromptIdx] = originalPrompt;
-                
-                downloadedCount++;
-                
-                // Pequeno delay entre downloads para não sobrecarregar
-                await sleep(300);
-            } else if (check.isPlaceholder) {
-                console.log(`⏳ Item ${i}: Placeholder PNG (${check.sizeKB.toFixed(1)}KB), aguardando...`);
-            } else {
-                console.log(`⏳ Item ${i}: Imagem muito pequena (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+            // Obter o índice do prompt atual
+            // Usar lastPromptSentIndex se disponível, senão calcular baseado em currentIndex
+            const currentPromptIdx = automationState.lastPromptSentIndex >= 0
+                ? automationState.lastPromptSentIndex
+                : Math.max(0, automationState.currentIndex - 1);
+            const currentPrompt = automationState.prompts[currentPromptIdx];
+
+            if (!currentPrompt) {
+                console.log('⚠️ Prompt atual não encontrado, cancelando download...');
+                isDownloadingAllImages = false;
+                return;
             }
-        }
-        
-        if (downloadedCount > 0) {
-            console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas' do prompt[${currentPromptIdx}]`);
-        }
-        if (downloadedCount >= maxImagesPerPrompt) {
-            console.log(`✅ Todas as ${maxImagesPerPrompt} imagens do prompt atual baixadas.`);
-        }
-        // Marcar que o download foi iniciado para este prompt
-        automationState.imageDownloadInitiated = true;
+
+            const allItems = Array.from(document.querySelectorAll('div[role="listitem"]:not([data-gpa-all-images-processed="true"])'));
+            if (allItems.length === 0) {
+                isDownloadingAllImages = false;
+                return;
+            }
+
+            console.log(`🖼️ Modo 'Baixar Todas': Prompt[${currentPromptIdx}] "${currentPrompt.substring(0, 30)}..." - Verificando ${allItems.length} itens...`);
+
+            // Função para verificar se a imagem é válida
+            function checkImageValid(item) {
+                const image = item.querySelector('img[src^="data:image/"]');
+                if (!image || !image.src) return null;
+
+                const src = image.src;
+                const isPng = src.startsWith('data:image/png');
+                const isJpeg = src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
+                const isWebp = src.startsWith('data:image/webp');
+
+                const base64Length = src.split(',')[1]?.length || 0;
+                const approxSizeBytes = base64Length * 0.75;
+                const approxSizeKB = approxSizeBytes / 1024;
+
+                return {
+                    valid: (isJpeg || isWebp) && approxSizeKB >= 100,
+                    isPlaceholder: isPng,
+                    isJpeg,
+                    isWebp,
+                    sizeKB: approxSizeKB,
+                    src: src,
+                    item: item
+                };
+            }
+
+            // Verificar se já atingimos o limite de downloads para este prompt
+            const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
+            const alreadyDownloaded = automationState.imagesDownloadedCount || 0;
+            if (alreadyDownloaded >= maxImagesPerPrompt) {
+                console.log(`✅ Limite de ${maxImagesPerPrompt} imagens já atingido para este prompt.`);
+                isDownloadingAllImages = false;
+                return;
+            }
+
+            console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
+
+            // Baixar apenas as imagens do prompt atual
+            let downloadedCount = alreadyDownloaded;
+
+            // Processar itens na ordem do DOM
+            for (let i = 0; i < allItems.length && downloadedCount < maxImagesPerPrompt; i++) {
+                const item = allItems[i];
+                const check = checkImageValid(item);
+
+                if (!check) continue;
+
+                if (check.valid) {
+                    const imageNumber = downloadedCount + 1;
+                    const promptName = currentPrompt;
+
+                    console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
+                    item.dataset.gpaAllImagesProcessed = 'true';
+                    automationState.imagesDownloadedCount = downloadedCount + 1;
+
+                    // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
+                    // Temporariamente modificar o prompt para incluir número da imagem
+                    const originalPrompt = automationState.prompts[currentPromptIdx];
+                    automationState.prompts[currentPromptIdx] = `${originalPrompt}_${imageNumber}`;
+                    await triggerDownload(check.src, 'image', currentPromptIdx);
+                    // Restaurar prompt original
+                    automationState.prompts[currentPromptIdx] = originalPrompt;
+
+                    downloadedCount++;
+
+                    // Pequeno delay entre downloads para não sobrecarregar
+                    await sleep(300);
+                } else if (check.isPlaceholder) {
+                    console.log(`⏳ Item ${i}: Placeholder PNG (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+                } else {
+                    console.log(`⏳ Item ${i}: Imagem muito pequena (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+                }
+            }
+
+            if (downloadedCount > 0) {
+                console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas' do prompt[${currentPromptIdx}]`);
+            }
+            if (downloadedCount >= maxImagesPerPrompt) {
+                console.log(`✅ Todas as ${maxImagesPerPrompt} imagens do prompt atual baixadas.`);
+            }
+            // Marcar que o download foi iniciado para este prompt
+            automationState.imageDownloadInitiated = true;
         } finally {
             isDownloadingAllImages = false;
         }
@@ -2375,7 +2547,7 @@
                     setTimeout(() => {
                         if (!automationState.isRunning) return;
                         if (automationState.imageDownloadInitiated) return;
-                        
+
                         // Função para verificar se a imagem é válida
                         function checkImageValid() {
                             const playIcon = topMostItem.querySelector('svg.lucide-play');
@@ -2389,12 +2561,12 @@
                             const isPng = src.startsWith('data:image/png');
                             const isJpeg = src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
                             const isWebp = src.startsWith('data:image/webp');
-                            
+
                             // Calcular tamanho aproximado do base64
                             const base64Length = src.split(',')[1]?.length || 0;
                             const approxSizeBytes = base64Length * 0.75;
                             const approxSizeKB = approxSizeBytes / 1024;
-                            
+
                             // Qualquer PNG é considerado placeholder no Grok
                             // JPEG/WEBP maior que 100KB é considerado imagem final
                             return {
@@ -2406,7 +2578,7 @@
                                 src: src
                             };
                         }
-                        
+
                         // Verificação inicial
                         const initialCheck = checkImageValid();
                         if (initialCheck.valid) {
@@ -2417,24 +2589,24 @@
                             triggerDownload(initialCheck.src, 'image', capturedImageIndex);
                             return;
                         }
-                        
+
                         // Se for placeholder, iniciar polling
                         if (initialCheck.isPlaceholder) {
                             console.log(`⏳ Placeholder detectado (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling até imagem final estar pronta (índice: ${capturedImageIndex})...`);
-                            
+
                             let attempts = 0;
                             const maxAttempts = 60; // 30 segundos (500ms * 60)
-                            
+
                             const pollInterval = setInterval(() => {
                                 attempts++;
-                                
+
                                 if (!automationState.isRunning || automationState.imageDownloadInitiated) {
                                     clearInterval(pollInterval);
                                     return;
                                 }
-                                
+
                                 const check = checkImageValid();
-                                
+
                                 if (check.valid) {
                                     clearInterval(pollInterval);
                                     automationState.imageDownloadInitiated = true;
@@ -2443,7 +2615,7 @@
                                     triggerDownload(check.src, 'image', capturedImageIndex);
                                     return;
                                 }
-                                
+
                                 if (attempts >= maxAttempts) {
                                     clearInterval(pollInterval);
                                     console.log(`⚠️ Timeout após ${maxAttempts} tentativas. Baixando imagem atual mesmo assim...`);
@@ -2455,7 +2627,7 @@
                                     }
                                     return;
                                 }
-                                
+
                                 // Log a cada 10 tentativas
                                 if (attempts % 10 === 0) {
                                     console.log(`⏳ Polling imagem... tentativa ${attempts}/${maxAttempts}, atual: ${check.isPlaceholder ? 'PNG placeholder' : (check.isJpeg || check.isWebp ? 'JPEG/WEBP pequeno' : 'outro')}`);
@@ -2464,20 +2636,20 @@
                         } else if (!initialCheck.isPlaceholder && !initialCheck.valid) {
                             // JPEG/WEBP pequeno demais, iniciar polling também
                             console.log(`⏳ Imagem JPEG/WEBP muito pequena (${initialCheck.sizeKB.toFixed(1)}KB). Iniciando polling (índice: ${capturedImageIndex})...`);
-                            
+
                             let attempts = 0;
                             const maxAttempts = 60;
-                            
+
                             const pollInterval = setInterval(() => {
                                 attempts++;
-                                
+
                                 if (!automationState.isRunning || automationState.imageDownloadInitiated) {
                                     clearInterval(pollInterval);
                                     return;
                                 }
-                                
+
                                 const check = checkImageValid();
-                                
+
                                 if (check.valid) {
                                     clearInterval(pollInterval);
                                     automationState.imageDownloadInitiated = true;
@@ -2486,7 +2658,7 @@
                                     triggerDownload(check.src, 'image', capturedImageIndex);
                                     return;
                                 }
-                                
+
                                 if (attempts >= maxAttempts) {
                                     clearInterval(pollInterval);
                                     console.log(`⚠️ Timeout. Baixando imagem atual...`);
@@ -2584,18 +2756,18 @@
 
                     if (result.method === 'extension' && result.url) {
                         // triggerDownload will mark as downloaded internally
-                        triggerDownload(result.url, 'video', currentPromptIndex);
+                        await triggerDownload(result.url, 'video', currentPromptIndex);
                     } else {
                         // Fallback: use video src (may be SD if upscale URL not accessible)
                         console.log('⚠️ URL de upscale não acessível, usando src do vídeo.');
-                        triggerDownload(video.src, 'video', currentPromptIndex);
+                        await triggerDownload(video.src, 'video', currentPromptIndex);
                     }
                 } else {
                     // Upscale failed, download SD version
                     console.log('⚠️ Upscale falhou, baixando vídeo SD.');
-                    triggerDownload(video.src, 'video', currentPromptIndex);
+                    await triggerDownload(video.src, 'video', currentPromptIndex);
                 }
-                
+
                 // Se for o último item, finalizar
                 const isLastItem = automationState.mode === 'image-to-video'
                     ? automationState.currentImageIndex >= automationState.imageQueue.length - 1
@@ -2604,7 +2776,7 @@
                     console.log('✅ Último vídeo processado (com upscale), finalizando...');
                     handleAutomationComplete();
                 }
-                
+
                 automationState.processingPrompts.delete(currentPromptIndex);
                 console.log(`🔓 [processVideoElement] Lock removido para prompt ${currentPromptIndex} (upscale path). processingPrompts.size = ${automationState.processingPrompts.size}`);
             } else {
@@ -2622,7 +2794,7 @@
 
                 // Always use extension download to ensure correct subfolder
                 // Note: triggerDownload will mark as downloaded internally
-                triggerDownload(video.src, 'video', currentPromptIndex);
+                await triggerDownload(video.src, 'video', currentPromptIndex);
                 console.log('✅ Download via extensão iniciado.');
 
                 // Se for o último item, finalizar
@@ -2673,11 +2845,11 @@
     handleAutomationComplete = function () {
         const elapsed = automationState.startTime ? Math.max(0, Math.floor((Date.now() - automationState.startTime) / 1000)) : 0;
         // Use imageQueue length for image-to-video mode, prompts length for other modes
-        const totalItems = automationState.mode === 'image-to-video' 
+        const totalItems = automationState.mode === 'image-to-video'
             ? (automationState.imageQueue?.length || 0)
             : (automationState.prompts?.length || 0);
         const itemType = automationState.mode === 'image-to-video' ? 'imagens' : 'prompts';
-        
+
         sendMessageToBackground({
             action: 'automationComplete',
             totalPrompts: totalItems
@@ -2707,7 +2879,7 @@
             // Isso garante que cada vídeo novo tenha um índice único
             currentPromptIndex = automationState.processedVideoUrls.size - 1;
         }
-        
+
         console.log(`🔍 [Wrapper] Tentando processar vídeo - índice: ${currentPromptIndex}, currentIndex: ${automationState.currentIndex}, processedVideoUrls.size: ${automationState.processedVideoUrls.size}`);
 
         // Early return if already processing or downloaded
