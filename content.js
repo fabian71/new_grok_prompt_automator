@@ -1874,10 +1874,9 @@
 
             const imgData = storedImage[currentImage.id];
 
-            // ========== STEP 1: Upload Image via File Input ==========
-            console.log('📤 Step 1: Fazendo upload da imagem...');
-            console.log(`📊 Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
-
+            // ========== STEP 0: Insert Prompt Text (if provided) - BEFORE upload ==========
+            const imagePrompt = automationState.settings?.imagePrompt;
+            
             // Wait for UI to be ready - look for the contenteditable editor
             let editor = findEditor();
             let attempts = 0;
@@ -1891,6 +1890,27 @@
             if (!editor) {
                 throw new Error('Editor não encontrado na página após 10 tentativas');
             }
+
+            // Insert prompt text BEFORE uploading image
+            if (imagePrompt && imagePrompt.trim()) {
+                console.log(`📝 Step 0: Inserindo prompt no editor antes do upload...`);
+                updateOverlay({
+                    status: 'Inserindo prompt...',
+                    prompt: imagePrompt,
+                    index: automationState.currentImageIndex + 1,
+                    total: automationState.imageQueue.length
+                });
+
+                simulateTyping(editor, imagePrompt);
+                console.log('✅ Prompt inserido no editor');
+                await sleep(800);
+            } else {
+                console.log('ℹ️ Nenhum prompt para inserir (campo vazio)');
+            }
+
+            // ========== STEP 1: Upload Image via File Input ==========
+            console.log('📤 Step 1: Fazendo upload da imagem...');
+            console.log(`📊 Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
 
             console.log('✅ Editor pronto, aguardando 1.5s antes do upload...');
             await sleep(1500);
@@ -2209,7 +2229,8 @@
                     breakPrompts: config.breakPrompts || 90,
                     breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3),
                     videoDuration: config.videoDuration || '6s',
-                    resolution: config.resolution || '480p'
+                    resolution: config.resolution || '480p',
+                    imagePrompt: config.imagePrompt || '' // Prompt para enviar com as imagens
                 };
 
                 // Force disable upscale if resolution is 720p

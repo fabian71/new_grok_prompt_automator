@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Elements
     const promptsTextarea = document.getElementById('prompts-textarea');
+    const imagePromptTextarea = document.getElementById('image-prompt-textarea');
     const delayInput = document.getElementById('delay-input');
     const delayInputImage = document.getElementById('delay-input-image'); // Delay para Image-to-Video
     const aspectRatioSelect = document.getElementById('aspect-ratio-select');
@@ -82,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             aspectRatio: aspectRatioSelect.value,
             videoDuration: videoDurationSelect ? videoDurationSelect.value : '6s',
             videoDurationImage: videoDurationSelectImage ? videoDurationSelectImage.value : '6s',
+            imagePrompt: imagePromptTextarea ? imagePromptTextarea.value : '',
             downloadSubfolder: downloadSubfolderName.value,
             breakPrompts: breakPrompts.value,
             breakMin: breakMin.value,
@@ -144,6 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (popupSettings.aspectRatio) aspectRatioSelect.value = popupSettings.aspectRatio;
             if (popupSettings.videoDuration && videoDurationSelect) videoDurationSelect.value = popupSettings.videoDuration;
             if (popupSettings.videoDurationImage && videoDurationSelectImage) videoDurationSelectImage.value = popupSettings.videoDurationImage;
+            if (popupSettings.imagePrompt !== undefined && imagePromptTextarea) imagePromptTextarea.value = popupSettings.imagePrompt;
             if (popupSettings.downloadSubfolder) downloadSubfolderName.value = popupSettings.downloadSubfolder;
             if (popupSettings.breakPrompts) breakPrompts.value = popupSettings.breakPrompts;
             if (popupSettings.breakMin) breakMin.value = popupSettings.breakMin;
@@ -193,6 +196,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     aspectRatioSelect.addEventListener('change', saveAllSettings);
     if (videoDurationSelect) videoDurationSelect.addEventListener('change', saveAllSettings);
     if (videoDurationSelectImage) videoDurationSelectImage.addEventListener('change', saveAllSettings);
+    if (imagePromptTextarea) imagePromptTextarea.addEventListener('input', saveAllSettings);
     downloadSubfolderName.addEventListener('change', saveAllSettings);
     breakPrompts.addEventListener('change', saveAllSettings);
     breakMin.addEventListener('change', saveAllSettings);
@@ -872,6 +876,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const aspectRatios = Array.from(document.querySelectorAll('.random-option:checked')).map(cb => cb.value);
             const config = {
                 imageCount: uploadedImages.length, // Enviar apenas a contagem
+                imagePrompt: imagePromptTextarea ? imagePromptTextarea.value.trim() : '', // Prompt para enviar com as imagens
                 delay: parseInt(delayInputImage ? delayInputImage.value : delayInput.value),
                 aspectRatio: aspectRatioSelect.value,
                 randomizeAspectRatio: toggleRandomize.checked,
