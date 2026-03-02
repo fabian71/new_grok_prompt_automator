@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const videoDurationSelect = document.getElementById('video-duration-select');
     const videoDurationSelectImage = document.getElementById('video-duration-select-image');
     const videoDurationContainer = document.getElementById('video-duration-container');
+    const textResolutionContainer = document.getElementById('text-resolution-container');
     const videoDelayWarningImage = document.getElementById('video-delay-warning-image');
     const toggleRandomize = document.getElementById('toggle-randomize');
     const randomizeSection = document.getElementById('randomize-section');
@@ -302,6 +303,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (videoDurationContainer) {
                 videoDurationContainer.style.display = 'block';
             }
+            if (textResolutionContainer) {
+                textResolutionContainer.style.display = 'block';
+            }
         } else {
             // Check text generation mode
             const modeRadio = document.querySelector('input[name="generation-mode"]:checked');
@@ -313,6 +317,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log(`🎯 Modo selecionado: ${mode}, Resolução: ${res}`);
 
             if (mode === 'video') {
+                if (textResolutionContainer) {
+                    textResolutionContainer.style.display = 'block';
+                }
                 if (res === '720p') {
                     console.log('✅ Modo Vídeo (720p): Upscale oculto');
                     upscaleContainer.style.display = 'none';
@@ -329,6 +336,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 upscaleContainer.style.display = 'none';
                 if (videoDurationContainer) {
                     videoDurationContainer.style.display = 'none';
+                }
+                if (textResolutionContainer) {
+                    textResolutionContainer.style.display = 'none';
                 }
             }
         }
@@ -547,11 +557,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 delayInput.value = 12; // Vídeo: 12 segundos (padrão)
             }
 
-            // Upscale sempre visível para ambos modos
-            upscaleContainer.style.display = 'flex';
-            if (videoDurationContainer) {
-                videoDurationContainer.style.display = mode === 'video' ? 'block' : 'none';
-            }
+            updateUpscaleVisibility();
 
             // Save mode
             chrome.storage.local.set({ generationMode: mode });
@@ -569,15 +575,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             radio.dispatchEvent(new Event('change'));
         }
     } else {
-        // Se não tem modo salvo, garantir que upscale está visível
-        upscaleContainer.style.display = 'flex';
+        updateUpscaleVisibility();
     }
 
     // Garantir visibilidade correta da duração ao carregar
-    if (videoDurationContainer) {
-        const currentMode = document.querySelector('input[name="generation-mode"]:checked')?.value || 'video';
-        videoDurationContainer.style.display = currentMode === 'video' ? 'block' : 'none';
-    }
+    updateUpscaleVisibility();
 
     // Randomize aspect ratio
     toggleRandomize.addEventListener('change', () => {
@@ -721,6 +723,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadSubfolderName.value = downloadSubfolder;
     }
 
+    async function ensureActiveGrokTab() {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+        if (!tab || !tab.id) {
+            alert('Nenhuma tab ativa encontrada!');
+            return null;
+        }
+
+        if (!tab.url || !tab.url.includes('grok.com')) {
+            const proceed = confirm('Você não está na página do Grok. Deseja abrir o Grok agora?');
+            if (proceed) {
+                await chrome.tabs.update(tab.id, { url: 'https://grok.com/imagine' });
+                alert('Aguarde a página carregar e clique em Iniciar novamente.');
+            }
+            return null;
+        }
+
+        return tab;
+    }
+
+    async function ensureContentScriptReady(tabId, attempts = 3) {
+        const checkOnce = () => new Promise((resolve) => {
+            chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
+                if (chrome.runtime.lastError || !response) {
+                    resolve(false);
+                } else {
+                    resolve(true);
+                }
+            });
+        });
+
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            const ready = await checkOnce();
+            if (ready) return true;
+            console.log(`⏳ Content script não pronto, tentativa ${attempt}/${attempts}...`);
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        alert('Mensagem da extensão Grok Prompt Automator\n\nO content script não está carregado. Tente recarregar a página (F5) e clique em Iniciar novamente.');
+        return false;
+    }
+
+    async function sendToContentScript(tabId, payload) {
+        return new Promise((resolve) => {
+            chrome.tabs.sendMessage(tabId, payload, () => {
+                if (chrome.runtime.lastError) {
+                    console.log('Content script não respondeu:', chrome.runtime.lastError.message);
+                    resolve(false);
+                    return;
+                }
+                resolve(true);
+            });
+        });
+    }
+
     // Start automation
     startBtn.addEventListener('click', async () => {
         const activeTab = document.querySelector('.tab-content.active').id;
@@ -766,64 +823,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 downloadSubfolder: config.downloadSubfolder
             });
 
-            // Send message to content script
             try {
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-                if (!tab || !tab.id) {
-                    alert('Nenhuma tab ativa encontrada!');
-                    return;
-                }
-
-                if (!tab.url || !tab.url.includes('grok.com')) {
-                    const proceed = confirm('Você não está na página do Grok. Deseja abrir o Grok agora?');
-                    if (proceed) {
-                        await chrome.tabs.update(tab.id, { url: 'https://grok.com/imagine' });
-                        alert('Aguarde a página carregar e clique em Iniciar novamente.');
-                    }
-                    return;
-                }
+                const tab = await ensureActiveGrokTab();
+                if (!tab) return;
 
                 // Salvar ID da aba para poder parar depois
                 await chrome.storage.local.set({ activeTabId: tab.id });
 
-                // 🔍 PING CHECK: Verificar se o content script está pronto
-                const checkContentScript = () => {
-                    return new Promise((resolve) => {
-                        chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (response) => {
-                            if (chrome.runtime.lastError || !response) {
-                                resolve(false);
-                            } else {
-                                resolve(true);
-                            }
-                        });
-                    });
-                };
-
-                // Tentar até 3 vezes com delay
-                let attempts = 0;
-                let scriptReady = false;
-
-                while (attempts < 3 && !scriptReady) {
-                    scriptReady = await checkContentScript();
-                    if (!scriptReady) {
-                        attempts++;
-                        console.log(`⏳ Content script não pronto, tentativa ${attempts}/3...`);
-                        await new Promise(resolve => setTimeout(resolve, 500)); // Aguardar 500ms
-                    }
-                }
-
+                const scriptReady = await ensureContentScriptReady(tab.id);
                 if (!scriptReady) {
-                    alert('O content script não está carregado. Tente recarregar a página (F5) e clique em Iniciar novamente.');
                     return;
                 }
 
-                // ✅ Content script está pronto, enviar mensagem
-                chrome.tabs.sendMessage(tab.id, { action: 'startAutomation', config }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.log('Content script não respondeu:', chrome.runtime.lastError.message);
-                    }
-                });
+                const sent = await sendToContentScript(tab.id, { action: 'startAutomation', config });
+                if (!sent) {
+                    alert('Mensagem da extensão Grok Prompt Automator\n\nFalha ao comunicar com a página. Recarregue (F5) e tente iniciar novamente.');
+                    return;
+                }
 
                 updateUIState(true);
                 statusText.textContent = 'Automação iniciada...';
@@ -900,33 +916,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 downloadSubfolder: config.downloadSubfolder
             });
 
-            // Send message to content script
             try {
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-                if (!tab || !tab.id) {
-                    alert('Nenhuma tab ativa encontrada!');
-                    return;
-                }
-
-                if (!tab.url || !tab.url.includes('grok.com')) {
-                    const proceed = confirm('Você não está na página do Grok. Deseja abrir o Grok agora?');
-                    if (proceed) {
-                        await chrome.tabs.update(tab.id, { url: 'https://grok.com/imagine' });
-                        alert('Aguarde a página carregar e clique em Iniciar novamente.');
-                    }
-                    return;
-                }
+                const tab = await ensureActiveGrokTab();
+                if (!tab) return;
 
                 // Salvar ID da aba para poder parar depois
                 await chrome.storage.local.set({ activeTabId: tab.id });
 
-                chrome.tabs.sendMessage(tab.id, { action: 'startImageToVideo', config }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        // Isso é normal se a página foi recarregada
-                        console.log('Content script não respondeu:', chrome.runtime.lastError.message);
-                    }
-                });
+                const scriptReady = await ensureContentScriptReady(tab.id);
+                if (!scriptReady) {
+                    startBtn.disabled = false;
+                    return;
+                }
+
+                const sent = await sendToContentScript(tab.id, { action: 'startImageToVideo', config });
+                if (!sent) {
+                    startBtn.disabled = false;
+                    alert('Mensagem da extensão Grok Prompt Automator\n\nFalha ao comunicar com a página. Recarregue (F5) e tente iniciar novamente.');
+                    return;
+                }
 
                 updateUIState(true);
                 statusText.textContent = 'Automação de imagem para vídeo iniciada...';
