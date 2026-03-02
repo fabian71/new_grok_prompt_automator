@@ -1221,8 +1221,9 @@
                     console.log(`📋 Menu aberto! Itens: ${menuItems.map(m => normalizeText(m.textContent)).join(' | ')}`);
 
                     const upscaleItem = menuItems.find(item => {
+                        const hasIcon = item.querySelector('svg.lucide-expand');
                         const text = normalizeText(item.textContent);
-                        return text.includes('upscale') || text.includes('ampliar');
+                        return hasIcon || text.includes('upscale') || text.includes('ampliar') || text.includes('escala') || text.includes('expand');
                     });
 
                     if (upscaleItem) {
