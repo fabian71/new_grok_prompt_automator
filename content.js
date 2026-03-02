@@ -1090,23 +1090,23 @@
 
             while ((Date.now() - startTime) < maxWaitTime) {
                 try {
-                    // Procurar indicador "HD" na UI (agora é uma <div> sobre o vídeo)
-                    const hdIndicator = Array.from(document.querySelectorAll('div')).find(div => {
+                    // Procurar indicador "HD" na UI (dentro do container)
+                    const hdIndicator = Array.from(container.querySelectorAll('div')).find(div => {
                         return div.textContent.trim() === 'HD' && div.classList.contains('absolute') && div.classList.contains('rounded-full');
                     });
 
                     if (hdIndicator) {
-                        console.log('✅ Upscale HD concluído! Indicador HD encontrado na tela.');
+                        console.log('✅ Upscale HD concluído! Indicador HD encontrado no container.');
                         await sleep(1500); // Dar tempo para a tag vídeo mudar
 
-                        // Tentar encontrar a tag de vídeo em HD
+                        // Tentar encontrar a tag de vídeo em HD no container
                         // Segundo a UI, há <video id="hd-video" src="...generated_video_hd.mp4...">
-                        let hdVideo = document.querySelector('video#hd-video') ||
-                            document.querySelector('video[src*="generated_video_hd"]');
+                        let hdVideo = container.querySelector('video#hd-video') ||
+                            container.querySelector('video[src*="generated_video_hd"]');
 
                         // Fallback: o vídeo SD fica com "visibility: hidden", e o HD fica "visible"
                         if (!hdVideo) {
-                            const videos = Array.from(document.querySelectorAll('video'));
+                            const videos = Array.from(container.querySelectorAll('video'));
                             hdVideo = videos.find(v => v.src && v.style.visibility !== 'hidden' && v.src.includes('generated_video'));
                         }
 
@@ -1115,14 +1115,14 @@
                             return { success: true, url: hdVideo.src, method: 'extension' };
                         }
 
-                        // Se não achar a URL do vídeo diretamente, tenta o botão de download manual como fallback
-                        const downloadBtn = findAllElements('button').find(btn => {
+                        // Se não achar a URL do vídeo diretamente, tenta o botão de download manual no container
+                        const downloadBtn = Array.from(container.querySelectorAll('button')).find(btn => {
                             const label = normalizeText(btn.getAttribute('aria-label') || '');
                             return label.includes('baixar') || label.includes('download');
                         });
 
                         if (downloadBtn) {
-                            console.log('📥 URL do vídeo HD não acessível. Clicando no botão de download nativo...');
+                            console.log('📥 URL do vídeo HD não acessível. Clicando no botão de download nativo do container...');
                             forceClick(downloadBtn);
                             return { success: true, method: 'click' };
                         } else {
@@ -2204,51 +2204,54 @@
                 await configureImageMode(currentRatio);
                 await sleep(1000); // 1s para o Grok atualizar os parâmetros internos
 
-                // ========== STEP 2: Select Video Mode ==========
-                console.log('🎬 Step 2: Selecionando modo Vídeo...');
+                // ========== STEP 2: Select Mode ==========
+                const genMode = automationState.settings?.generationMode || 'video';
+                console.log(`🎬 Step 2: Selecionando modo ${genMode}...`);
                 updateOverlay({
-                    status: 'Selecionando modo vídeo...',
+                    status: `Selecionando modo ${genMode}...`,
                     prompt: `Imagem: ${currentImage.name}`,
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
 
-                const modeSelected = await selectGenerationMode('video');
+                const modeSelected = await selectGenerationMode(genMode);
                 if (!modeSelected) {
-                    console.warn('⚠️ Não conseguiu selecionar modo vídeo, tentando continuar...');
+                    console.warn(`⚠️ Não conseguiu selecionar modo ${genMode}, tentando continuar...`);
                 }
                 await sleep(1000);
 
-                // ========== STEP 3: Select Video Duration ==========
-                if (automationState.settings?.videoDuration) {
-                    console.log(`⏱️ Step 3: Selecionando duração ${automationState.settings.videoDuration}...`);
+                if (genMode === 'video') {
+                    // ========== STEP 3: Select Video Duration ==========
+                    if (automationState.settings?.videoDuration) {
+                        console.log(`⏱️ Step 3: Selecionando duração ${automationState.settings.videoDuration}...`);
+                        updateOverlay({
+                            status: `Configurando duração ${automationState.settings.videoDuration}...`,
+                            prompt: `Imagem: ${currentImage.name}`,
+                            index: automationState.currentImageIndex + 1,
+                            total: automationState.imageQueue.length
+                        });
+
+                        // Garantir que o menu esteja fechado antes de selecionar duração
+                        document.body.click();
+                        await sleep(500);
+
+                        const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
+                        console.log(`📊 Resultado seleção duração (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
+                        await sleep(1000);
+                    }
+
+                    // ========== STEP 3.5: Select Resolution ==========
+                    const resolution = automationState.settings?.resolution || '480p';
+                    console.log(`⏱️ Step 3.5: Selecionando resolução ${resolution}...`);
                     updateOverlay({
-                        status: `Configurando duração ${automationState.settings.videoDuration}...`,
+                        status: `Configurando resolução ${resolution}...`,
                         prompt: `Imagem: ${currentImage.name}`,
                         index: automationState.currentImageIndex + 1,
                         total: automationState.imageQueue.length
                     });
-
-                    // Garantir que o menu esteja fechado antes de selecionar duração
-                    document.body.click();
-                    await sleep(500);
-
-                    const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
-                    console.log(`📊 Resultado seleção duração (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
-                    await sleep(1000);
+                    await selectResolution(resolution);
+                    await sleep(800);
                 }
-
-                // ========== STEP 3.5: Select Resolution ==========
-                const resolution = automationState.settings?.resolution || '480p';
-                console.log(`⏱️ Step 3.5: Selecionando resolução ${resolution}...`);
-                updateOverlay({
-                    status: `Configurando resolução ${resolution}...`,
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-                await selectResolution(resolution);
-                await sleep(800);
 
                 // ========== STEP 4: Submit ==========
                 console.log('🚀 Step 4: Enviando...');
@@ -2258,6 +2261,8 @@
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
+
+                const sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
 
                 // Try multiple submit button selectors
                 const submitSelectors = [
@@ -2291,56 +2296,20 @@
                     }
                 }
 
-                // ========== STEP 5: Wait for Generation (with early completion detection) ==========
-                console.log('⏳ Step 5: Aguardando geração do vídeo...');
+                // ========== STEP 5: Wait for Generation ==========
+                console.log(`⏳ Step 5: Aguardando geração de ${genMode}...`);
                 updateOverlay({
-                    status: 'Gerando vídeo...',
+                    status: `Gerando ${genMode}...`,
                     prompt: `Imagem: ${currentImage.name}`,
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
 
-                // Wait for video generation - MutationObserver will handle upscale and download
-                // AUMENTADO PARA 720p/HD
-                const maxWaitTime = automationState.settings?.upscale ? 240000 : 180000;
-                const checkInterval = 1500; // Check every 1.5 seconds
-                let elapsed = 0;
-                let processingComplete = false;
-                let lastDownloadCheck = false;
-
-                while (elapsed < maxWaitTime && !processingComplete) {
-                    await sleep(checkInterval);
-                    elapsed += checkInterval;
-
-                    // Check if video was downloaded (means processing is done)
-                    const isDownloaded = automationState.downloadedVideos.has(automationState.currentImageIndex);
-                    const isUpscaled = automationState.upscaledPrompts.has(automationState.currentImageIndex);
-
-                    if (isDownloaded && !lastDownloadCheck) {
-                        console.log(`✅ Download detectado após ${elapsed / 1000}s`);
-                        lastDownloadCheck = true;
-
-                        // If upscale not enabled, we can proceed immediately after download
-                        if (!automationState.settings?.upscale) {
-                            console.log('✅ Sem upscale, prosseguindo imediatamente...');
-                            processingComplete = true;
-                            break;
-                        }
-                    }
-
-                    // If upscale enabled, check both conditions
-                    if (automationState.settings?.upscale && isDownloaded && isUpscaled) {
-                        console.log(`✅ Upscale + download completos em ${elapsed / 1000}s!`);
-                        processingComplete = true;
-                        break;
-                    }
-
-                    // Timeouts removidos a pedido do usuário
-                    // Mantemos apenas o maxWaitTime global de segurança
-                }
-
-                if (!processingComplete) {
-                    console.log(`⏱️ Timeout máximo (${maxWaitTime / 1000}s), prosseguindo...`);
+                if (genMode === 'video') {
+                    await waitAndDownloadVideo(automationState.currentImageIndex, currentImage.name, sectionsBefore);
+                } else {
+                    const outputCount = automationState.settings?.downloadMultiCount || 4;
+                    await waitAndDownloadImages(automationState.currentImageIndex, currentImage.name, outputCount, sectionsBefore);
                 }
 
                 // ========== STEP 6: Next Image ==========
@@ -2495,7 +2464,8 @@
                         breakDuration: Math.floor(Math.random() * ((config.breakDurationMax || 3) - (config.breakDurationMin || 3) + 1)) + (config.breakDurationMin || 3),
                         videoDuration: config.videoDuration || '6s',
                         resolution: config.resolution || '480p',
-                        imagePrompt: config.imagePrompt || '' // Prompt para enviar com as imagens
+                        imagePrompt: config.imagePrompt || '', // Prompt para enviar com as imagens
+                        generationMode: config.mode || 'video'
                     };
 
                     // Force disable upscale if resolution is 720p

@@ -33,6 +33,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const videoDelayWarningImage = document.getElementById('video-delay-warning-image');
     const toggleRandomize = document.getElementById('toggle-randomize');
     const randomizeSection = document.getElementById('randomize-section');
+
+    // Novas vars para aba Imagem
+    const aspectRatioSelectImage = document.getElementById('aspect-ratio-select-image');
+    const toggleRandomizeImage = document.getElementById('toggle-randomize-image');
+    const randomizeSectionImage = document.getElementById('randomize-section-image');
+
     const startBtn = document.getElementById('start-btn');
     const stopBtn = document.getElementById('stop-btn');
     const resetBtn = document.getElementById('reset-btn');
@@ -94,6 +100,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Random options (checkboxes individuais)
             randomOptions: Array.from(document.querySelectorAll('.random-option')).map(cb => ({
+                value: cb.value,
+                checked: cb.checked
+            })),
+
+            toggleRandomizeImage: toggleRandomizeImage ? toggleRandomizeImage.checked : false,
+            aspectRatioImage: aspectRatioSelectImage ? aspectRatioSelectImage.value : '3:2',
+            modeImage: document.querySelector('input[name="generation-mode-image"]:checked')?.value || 'video',
+            randomOptionsImage: Array.from(document.querySelectorAll('.random-option-image')).map(cb => ({
                 value: cb.value,
                 checked: cb.checked
             }))
@@ -171,6 +185,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             }
 
+            if (popupSettings.toggleRandomizeImage !== undefined && toggleRandomizeImage && randomizeSectionImage) {
+                toggleRandomizeImage.checked = popupSettings.toggleRandomizeImage;
+                randomizeSectionImage.style.display = popupSettings.toggleRandomizeImage ? 'block' : 'none';
+                if (aspectRatioSelectImage) aspectRatioSelectImage.disabled = popupSettings.toggleRandomizeImage;
+            }
+
+            if (popupSettings.aspectRatioImage && aspectRatioSelectImage) {
+                aspectRatioSelectImage.value = popupSettings.aspectRatioImage;
+            }
+
+            if (popupSettings.modeImage) {
+                const radioMode = document.querySelector(`input[name="generation-mode-image"][value="${popupSettings.modeImage}"]`);
+                if (radioMode) radioMode.checked = true;
+            }
+
+            if (popupSettings.randomOptionsImage) {
+                popupSettings.randomOptionsImage.forEach(opt => {
+                    const checkbox = document.querySelector(`.random-option-image[value="${opt.value}"]`);
+                    if (checkbox) checkbox.checked = opt.checked;
+                });
+            }
+
             updateBreakBadge();
         }
 
@@ -188,9 +224,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Salvar quando qualquer campo mudar
     toggleRandomize.addEventListener('change', saveAllSettings);
+    if (toggleRandomizeImage) toggleRandomizeImage.addEventListener('change', saveAllSettings);
     toggleBreak.addEventListener('change', saveAllSettings);
     autoDownloadCheckbox.addEventListener('change', saveAllSettings);
     if (autoDownloadPromptCheckbox) autoDownloadPromptCheckbox.addEventListener('change', saveAllSettings);
+    if (downloadAllImagesCheckbox) downloadAllImagesCheckbox.addEventListener('change', saveAllSettings);
+    if (downloadMultiCount) downloadMultiCount.addEventListener('change', saveAllSettings);
     toggleUpscale.addEventListener('change', saveAllSettings);
     delayInput.addEventListener('change', saveAllSettings);
     if (delayInputImage) delayInputImage.addEventListener('change', saveAllSettings);
@@ -217,8 +256,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    document.querySelectorAll('input[name="generation-mode-image"]').forEach(r => {
+        r.addEventListener('change', () => {
+            saveAllSettings();
+            updateUpscaleVisibility(); // Update upscale visibility when mode changes
+        });
+    });
+
     // Salvar random options
-    document.querySelectorAll('.random-option').forEach(cb => {
+    document.querySelectorAll('.random-option, .random-option-image').forEach(cb => {
         cb.addEventListener('change', saveAllSettings);
     });
 
@@ -290,21 +336,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         const activeTab = activeTabBtn.dataset.tab;
 
         if (activeTab === 'image-video-tab') {
-            // Check resolution for image mode
-            const res = document.querySelector('input[name="resolution-image"]:checked')?.value || '480p';
-            if (res === '720p') {
-                console.log('📹 Image-to-Video tab: 720p selecionado -> Upscale oculto');
-                upscaleContainer.style.display = 'none';
-            } else {
-                console.log('📹 Image-to-Video tab: 480p selecionado -> Upscale visível');
-                upscaleContainer.style.display = 'flex';
-            }
+            const modeImg = document.querySelector('input[name="generation-mode-image"]:checked')?.value || 'video';
+            const resImg = document.querySelector('input[name="resolution-image"]:checked')?.value || '480p';
+            const videoDurationContainerImage = document.getElementById('video-duration-container-image');
+            const textResolutionContainerImage = document.getElementById('text-resolution-container-image');
 
-            if (videoDurationContainer) {
-                videoDurationContainer.style.display = 'block';
-            }
-            if (textResolutionContainer) {
-                textResolutionContainer.style.display = 'block';
+            console.log(`📹 Image Tab Modo: ${modeImg}, Resolução: ${resImg}`);
+
+            if (modeImg === 'video') {
+                if (textResolutionContainerImage) textResolutionContainerImage.style.display = 'block';
+                if (videoDurationContainerImage) videoDurationContainerImage.style.display = 'block';
+
+                if (resImg === '720p') {
+                    upscaleContainer.style.display = 'none';
+                } else {
+                    upscaleContainer.style.display = 'flex';
+                }
+            } else {
+                // Modo imagem
+                if (textResolutionContainerImage) textResolutionContainerImage.style.display = 'none';
+                if (videoDurationContainerImage) videoDurationContainerImage.style.display = 'none';
+                upscaleContainer.style.display = 'none';
             }
         } else {
             // Check text generation mode
@@ -586,6 +638,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         randomizeSection.style.display = toggleRandomize.checked ? 'block' : 'none';
         aspectRatioSelect.disabled = toggleRandomize.checked;
     });
+
+    if (toggleRandomizeImage) {
+        toggleRandomizeImage.addEventListener('change', () => {
+            if (randomizeSectionImage) randomizeSectionImage.style.display = toggleRandomizeImage.checked ? 'block' : 'none';
+            if (aspectRatioSelectImage) aspectRatioSelectImage.disabled = toggleRandomizeImage.checked;
+        });
+    }
 
     // Break settings
     toggleBreak.addEventListener('change', () => {
@@ -889,14 +948,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             await new Promise(r => setTimeout(r, 800));
             statusText.textContent = 'Iniciando...';
 
-            const aspectRatios = Array.from(document.querySelectorAll('.random-option:checked')).map(cb => cb.value);
+            const aspectRatios = Array.from(document.querySelectorAll('.random-option-image:checked')).map(cb => cb.value);
+            const modeValue = document.querySelector('input[name="generation-mode-image"]:checked')?.value || 'video';
             const config = {
                 imageCount: uploadedImages.length, // Enviar apenas a contagem
                 imagePrompt: imagePromptTextarea ? imagePromptTextarea.value.trim() : '', // Prompt para enviar com as imagens
                 delay: parseInt(delayInputImage ? delayInputImage.value : delayInput.value),
-                aspectRatio: aspectRatioSelect.value,
-                randomizeAspectRatio: toggleRandomize.checked,
+                aspectRatio: aspectRatioSelectImage ? aspectRatioSelectImage.value : '3:2',
+                randomizeAspectRatio: toggleRandomizeImage ? toggleRandomizeImage.checked : false,
                 aspectRatios,
+                mode: modeValue,
                 videoDuration: videoDurationSelectImage ? videoDurationSelectImage.value : (videoDurationSelect ? videoDurationSelect.value : '6s'),
                 autoDownload: autoDownloadCheckbox.checked,
                 downloadSubfolder: downloadSubfolderName.value.trim(),
