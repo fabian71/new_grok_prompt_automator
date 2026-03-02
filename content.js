@@ -1090,38 +1090,43 @@
 
             while ((Date.now() - startTime) < maxWaitTime) {
                 try {
-                    // Look for HD button indicator
-                    const hdButtons = findAllElements('button');
-                    const hdButton = hdButtons.find(btn => {
-                        const hdText = btn.querySelector('div.text-\\[10px\\]');
-                        return hdText && normalizeText(hdText.textContent) === 'hd';
+                    // Procurar indicador "HD" na UI (agora é uma <div> sobre o vídeo)
+                    const hdIndicator = Array.from(document.querySelectorAll('div')).find(div => {
+                        return div.textContent.trim() === 'HD' && div.classList.contains('absolute') && div.classList.contains('rounded-full');
                     });
 
-                    if (hdButton) {
-                        console.log('✅ Upscale HD concluído! Botão HD encontrado.');
-                        await sleep(500);
+                    if (hdIndicator) {
+                        console.log('✅ Upscale HD concluído! Indicador HD encontrado na tela.');
+                        await sleep(1500); // Dar tempo para a tag vídeo mudar
 
-                        // Tentar encontrar o vídeo HD para baixar com o nome correto
-                        const hdVideo = document.querySelector('video#hd-video') ||
-                            Array.from(document.querySelectorAll('video')).find(v => v.src && v.src.includes('generated_video') && v.style.visibility !== 'hidden');
+                        // Tentar encontrar a tag de vídeo em HD
+                        // Segundo a UI, há <video id="hd-video" src="...generated_video_hd.mp4...">
+                        let hdVideo = document.querySelector('video#hd-video') ||
+                            document.querySelector('video[src*="generated_video_hd"]');
+
+                        // Fallback: o vídeo SD fica com "visibility: hidden", e o HD fica "visible"
+                        if (!hdVideo) {
+                            const videos = Array.from(document.querySelectorAll('video'));
+                            hdVideo = videos.find(v => v.src && v.style.visibility !== 'hidden' && v.src.includes('generated_video'));
+                        }
 
                         if (hdVideo && hdVideo.src) {
-                            console.log('📥 Vídeo HD encontrado, baixando via extensão...');
+                            console.log('📥 Vídeo HD encontrado, enviando URL do HD para download via extensão...');
                             return { success: true, url: hdVideo.src, method: 'extension' };
                         }
 
-                        // Se não achar o vídeo, tenta o botão de download como fallback
+                        // Se não achar a URL do vídeo diretamente, tenta o botão de download manual como fallback
                         const downloadBtn = findAllElements('button').find(btn => {
                             const label = normalizeText(btn.getAttribute('aria-label') || '');
                             return label.includes('baixar') || label.includes('download');
                         });
 
                         if (downloadBtn) {
-                            console.log('📥 Vídeo HD não acessível diretamente. Clicando no botão de download (fallback)...');
+                            console.log('📥 URL do vídeo HD não acessível. Clicando no botão de download nativo...');
                             forceClick(downloadBtn);
                             return { success: true, method: 'click' };
                         } else {
-                            console.warn('⚠️ Botão de download não encontrado após upscale.');
+                            console.warn('⚠️ Falha ao encontrar link ou botão de download para o HD.');
                             return { success: false };
                         }
                     }
