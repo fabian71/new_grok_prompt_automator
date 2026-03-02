@@ -313,7 +313,7 @@
                 border: '1px solid rgba(56, 189, 248, 0.35)',
                 color: '#7dd3fc'
             });
-            statusBadge.textContent = 'v2.0';
+            statusBadge.textContent = 'v3.0';
             rightSection.appendChild(statusBadge);
 
             // Botão fechar (X)
