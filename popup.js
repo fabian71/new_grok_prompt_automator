@@ -802,37 +802,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         return tab;
     }
 
-    async function ensureContentScriptReady(tabId, attempts = 3) {
-        const checkOnce = () => new Promise((resolve) => {
-            chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
-                if (chrome.runtime.lastError || !response) {
-                    resolve(false);
-                } else {
-                    resolve(true);
-                }
-            });
-        });
-
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-            const ready = await checkOnce();
-            if (ready) return true;
-            console.log(`⏳ Content script não pronto, tentativa ${attempt}/${attempts}...`);
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-
-        alert('Mensagem da extensão Grok Prompt Automator\n\nO content script não está carregado. Tente recarregar a página (F5) e clique em Iniciar novamente.');
-        return false;
-    }
-
-    async function sendToContentScript(tabId, payload) {
+    async function dispatchToContent(tabId, payload, retries = 4) {
         return new Promise((resolve) => {
-            chrome.tabs.sendMessage(tabId, payload, () => {
+            chrome.runtime.sendMessage({
+                action: 'dispatchToContent',
+                tabId,
+                payload,
+                retries
+            }, (resp) => {
                 if (chrome.runtime.lastError) {
-                    console.log('Content script não respondeu:', chrome.runtime.lastError.message);
-                    resolve(false);
+                    console.log('dispatchToContent falhou (runtime):', chrome.runtime.lastError.message);
+                    resolve({ success: false, error: chrome.runtime.lastError.message });
                     return;
                 }
-                resolve(true);
+                resolve(resp || { success: false, error: 'Sem resposta do background' });
             });
         });
     }
@@ -889,14 +872,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Salvar ID da aba para poder parar depois
                 await chrome.storage.local.set({ activeTabId: tab.id });
 
-                const scriptReady = await ensureContentScriptReady(tab.id);
-                if (!scriptReady) {
-                    return;
-                }
-
-                const sent = await sendToContentScript(tab.id, { action: 'startAutomation', config });
-                if (!sent) {
-                    alert('Mensagem da extensão Grok Prompt Automator\n\nFalha ao comunicar com a página. Recarregue (F5) e tente iniciar novamente.');
+                const sent = await dispatchToContent(tab.id, { action: 'startAutomation', config }, 5);
+                if (!sent?.success) {
+                    const reason = sent?.error || 'falha ao comunicar com a página';
+                    alert(`Mensagem da extensão Grok Prompt Automator\n\nNão foi possível iniciar: ${reason}\n\nA extensão tentou injetar o content script automaticamente. Se persistir, recarregue a página (F5) e tente novamente.`);
                     return;
                 }
 
@@ -983,16 +962,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Salvar ID da aba para poder parar depois
                 await chrome.storage.local.set({ activeTabId: tab.id });
 
-                const scriptReady = await ensureContentScriptReady(tab.id);
-                if (!scriptReady) {
+                const sent = await dispatchToContent(tab.id, { action: 'startImageToVideo', config }, 5);
+                if (!sent?.success) {
                     startBtn.disabled = false;
-                    return;
-                }
-
-                const sent = await sendToContentScript(tab.id, { action: 'startImageToVideo', config });
-                if (!sent) {
-                    startBtn.disabled = false;
-                    alert('Mensagem da extensão Grok Prompt Automator\n\nFalha ao comunicar com a página. Recarregue (F5) e tente iniciar novamente.');
+                    const reason = sent?.error || 'falha ao comunicar com a página';
+                    alert(`Mensagem da extensão Grok Prompt Automator\n\nNão foi possível iniciar: ${reason}\n\nA extensão tentou injetar o content script automaticamente. Se persistir, recarregue a página (F5) e tente novamente.`);
                     return;
                 }
 

@@ -91,6 +91,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Encaminhamento robusto de mensagem para content script com auto-injecao/retry.
+  if (request.action === "dispatchToContent") {
+    (async () => {
+      try {
+        const targetTabId = request.tabId;
+        const payload = request.payload;
+        const retries = Number.isInteger(request.retries) ? request.retries : 4;
+
+        if (!targetTabId || !payload) {
+          throw new Error("tabId ou payload ausentes");
+        }
+
+        const tab = await chrome.tabs.get(targetTabId);
+        if (!tab || !tab.url || !tab.url.includes("grok.com/imagine")) {
+          throw new Error("Abra a pagina do Grok Imagine antes de iniciar.");
+        }
+
+        await sendMessageWithRetry(targetTabId, payload, retries);
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error("Erro no dispatchToContent:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === "stopAutomation") {
     (async () => {
       try {
