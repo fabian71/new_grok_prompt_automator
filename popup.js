@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (btn.id === 'start-btn' || btn.id === 'reset-btn') {
                 btn.disabled = false;
             } else if (btn.id === 'stop-btn') {
-                btn.disabled = true;
+                btn.disabled = false;
             }
         });
     }
@@ -949,7 +949,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusText.textContent = 'Iniciando...';
 
             const aspectRatios = Array.from(document.querySelectorAll('.random-option-image:checked')).map(cb => cb.value);
-            const modeValue = document.querySelector('input[name="generation-mode-image"]:checked')?.value || 'video';
             const config = {
                 imageCount: uploadedImages.length, // Enviar apenas a contagem
                 imagePrompt: imagePromptTextarea ? imagePromptTextarea.value.trim() : '', // Prompt para enviar com as imagens
@@ -957,7 +956,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 aspectRatio: aspectRatioSelectImage ? aspectRatioSelectImage.value : '3:2',
                 randomizeAspectRatio: toggleRandomizeImage ? toggleRandomizeImage.checked : false,
                 aspectRatios,
-                mode: modeValue,
+                mode: 'video',
                 videoDuration: videoDurationSelectImage ? videoDurationSelectImage.value : (videoDurationSelect ? videoDurationSelect.value : '6s'),
                 autoDownload: autoDownloadCheckbox.checked,
                 downloadSubfolder: downloadSubfolderName.value.trim(),
@@ -1011,6 +1010,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     stopBtn.addEventListener('click', async () => {
         await chrome.storage.local.set({ automationActive: false });
 
+        // Pedir ao background para parar também (mais robusto que depender só do popup -> tab)
+        try {
+            chrome.runtime.sendMessage({ action: 'stopAutomation' }, () => {
+                if (chrome.runtime.lastError) {
+                    console.log('Aviso stopAutomation/background (ignorado):', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (e) {
+            console.log('Aviso stopAutomation/background (ignorado):', e?.message || e);
+        }
+
         // Tentar encontrar a aba correta
         const { activeTabId } = await chrome.storage.local.get('activeTabId');
         let tabId = activeTabId;
@@ -1026,6 +1036,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Ignorar erro se a aba fechou ou content script não responde
                 if (chrome.runtime.lastError) {
                     console.log('Aviso ao parar (ignorado):', chrome.runtime.lastError.message);
+                }
+            });
+        }
+
+        // Fallback extra: enviar stop para todas as abas do Grok Imagine (inclui /imagine/more e /imagine/post)
+        const grokTabs = await chrome.tabs.query({ url: '*://grok.com/imagine*' });
+        for (const t of grokTabs) {
+            if (!t.id) continue;
+            chrome.tabs.sendMessage(t.id, { action: 'stopAutomation' }, () => {
+                if (chrome.runtime.lastError) {
+                    // esperado quando content script não está carregado
                 }
             });
         }
@@ -1065,7 +1086,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Update UI state
     function updateUIState(isRunning) {
         startBtn.disabled = isRunning;
-        stopBtn.disabled = !isRunning;
+        // Sempre permitir stop manual para recuperar de estado inconsistente.
+        stopBtn.disabled = false;
         promptsTextarea.disabled = isRunning;
         delayInput.disabled = isRunning;
         if (delayInputImage) delayInputImage.disabled = isRunning;

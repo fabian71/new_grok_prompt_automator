@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     'use strict';
 
     if (window.whiskAutomatorLoaded) {
@@ -30,10 +30,11 @@
             upscaledPrompts: new Set(),
             processingPrompts: new Set(),
             downloadedVideos: new Set(),
-            processedVideoUrls: new Set(),
-            imageDownloadInitiated: false,
-            awaitingImageCompletion: false,
-            imagesDownloadedCount: 0,
+        processedVideoUrls: new Set(),
+        imageDownloadInitiated: false,
+        awaitingImageCompletion: false,
+        imageToVideoRetries: {},
+        imagesDownloadedCount: 0,
             lastPromptSentIndex: -1,
             restoredFromReload: false,
             promptsSinceLastBreak: 0,
@@ -43,10 +44,11 @@
 
         // --- Keep-Alive para Service Worker ---
         let keepAliveInterval = null;
+        let imageToVideoRunLock = false;
 
         function startKeepAlive() {
             if (keepAliveInterval) return;
-            console.log('🔥 Keep-alive iniciado');
+            console.log('ðŸ”¥ Keep-alive iniciado');
             keepAliveInterval = setInterval(() => {
                 try {
                     if (chrome.runtime && chrome.runtime.id) {
@@ -66,7 +68,7 @@
 
         function stopKeepAlive() {
             if (keepAliveInterval) {
-                console.log('🔥 Keep-alive parado');
+                console.log('ðŸ”¥ Keep-alive parado');
                 clearInterval(keepAliveInterval);
                 keepAliveInterval = null;
             }
@@ -89,7 +91,7 @@
             delete stateToSave.timeoutId;
 
             // Log para debug
-            console.log('💾 Salvando estado:', {
+            console.log('ðŸ’¾ Salvando estado:', {
                 mode: stateToSave.mode,
                 currentIndex: stateToSave.currentIndex,
                 currentImageIndex: stateToSave.currentImageIndex,
@@ -103,7 +105,7 @@
 
         async function clearAutomationState() {
             await chrome.storage.local.remove('grokAutomationState');
-            // Também atualizar automationActive para false
+            // TambÃ©m atualizar automationActive para false
             await chrome.storage.local.set({ automationActive: false });
         }
 
@@ -117,7 +119,7 @@
 
                     // If not on Grok Imagine page, clear the old state
                     if (!isGrokImagine) {
-                        console.log('⚠️ Estado de automação encontrado, mas não estamos na página do Grok. Limpando...');
+                        console.log('âš ï¸ Estado de automaÃ§Ã£o encontrado, mas nÃ£o estamos na pÃ¡gina do Grok. Limpando...');
                         await clearAutomationState();
                         return;
                     }
@@ -129,7 +131,7 @@
                     const hasImageQueue = saved.imageQueue && saved.imageQueue.length > 0;
 
                     if (!hasPrompts && !hasImageQueue) {
-                        console.log('⚠️ Estado restaurado não tem prompts nem imageQueue. Limpando...');
+                        console.log('âš ï¸ Estado restaurado nÃ£o tem prompts nem imageQueue. Limpando...');
                         await clearAutomationState();
                         return;
                     }
@@ -158,7 +160,7 @@
                         modeApplied: false // Force re-check of mode on new page
                     };
 
-                    console.log('♻️ Estado da automação restaurado após reload.', {
+                    console.log('â™»ï¸ Estado da automaÃ§Ã£o restaurado apÃ³s reload.', {
                         mode: automationState.mode,
                         prompts: automationState.prompts?.length || 0,
                         imageQueue: automationState.imageQueue?.length || 0,
@@ -172,27 +174,27 @@
                         : automationState.currentIndex >= automationState.prompts.length;
 
                     if (isComplete) {
-                        console.log('✅ Estado restaurado indica conclusão. Finalizando...');
+                        console.log('âœ… Estado restaurado indica conclusÃ£o. Finalizando...');
                         handleAutomationComplete();
                         return;
                     }
 
                     // Resume logic
                     if (automationState.isRunning) {
-                        console.log('🔄 Retomando automação após reload...');
+                        console.log('ðŸ”„ Retomando automaÃ§Ã£o apÃ³s reload...');
                         startOverlayTimer(); // Start timer immediately for restored state
 
                         if (automationState.mode === 'image-to-video') {
                             // Resume Image-to-Video
                             if (automationState.imageQueue && automationState.currentImageIndex < automationState.imageQueue.length) {
-                                console.log(`🎬 Retomando Image-to-Video: imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}`);
-                                console.log('⏳ Aguardando 3s para página estabilizar...');
+                                console.log(`ðŸŽ¬ Retomando Image-to-Video: imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}`);
+                                console.log('â³ Aguardando 3s para pÃ¡gina estabilizar...');
                                 setTimeout(() => {
                                     runImageToVideoAutomation();
                                 }, 3000);
                             } else {
                                 // If imageQueue is exhausted or invalid, treat as complete
-                                console.log('✅ Image-to-Video queue concluída ou inválida. Finalizando...');
+                                console.log('âœ… Image-to-Video queue concluÃ­da ou invÃ¡lida. Finalizando...');
                                 handleAutomationComplete();
                             }
                         } else {
@@ -245,7 +247,7 @@
                 transition: 'opacity 160ms ease, transform 200ms ease'
             });
 
-            // Header com gradiente igual ao da extensão
+            // Header com gradiente igual ao da extensÃ£o
             const header = document.createElement('div');
             Object.assign(header.style, {
                 background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.1))',
@@ -256,7 +258,7 @@
                 justifyContent: 'space-between'
             });
 
-            // Logo e título
+            // Logo e tÃ­tulo
             const logoSection = document.createElement('div');
             Object.assign(logoSection.style, {
                 display: 'flex',
@@ -264,7 +266,7 @@
                 gap: '10px'
             });
 
-            // Ícone/logo (círculo com gradiente)
+            // Ãcone/logo (cÃ­rculo com gradiente)
             const iconDiv = document.createElement('div');
             Object.assign(iconDiv.style, {
                 width: '28px',
@@ -293,7 +295,7 @@
 
             header.appendChild(logoSection);
 
-            // Seção direita: badge de status e botão fechar
+            // SeÃ§Ã£o direita: badge de status e botÃ£o fechar
             const rightSection = document.createElement('div');
             Object.assign(rightSection.style, {
                 display: 'flex',
@@ -301,7 +303,7 @@
                 gap: '10px'
             });
 
-            // Badge de versão/status
+            // Badge de versÃ£o/status
             const statusBadge = document.createElement('div');
             Object.assign(statusBadge.style, {
                 padding: '4px 10px',
@@ -316,7 +318,7 @@
             statusBadge.textContent = 'v3.0';
             rightSection.appendChild(statusBadge);
 
-            // Botão fechar (X)
+            // BotÃ£o fechar (X)
             const closeBtn = document.createElement('button');
             Object.assign(closeBtn.style, {
                 width: '24px',
@@ -351,7 +353,7 @@
             header.appendChild(rightSection);
             container.appendChild(header);
 
-            // Conteúdo principal
+            // ConteÃºdo principal
             const content = document.createElement('div');
             Object.assign(content.style, {
                 padding: '14px 16px 16px'
@@ -447,9 +449,9 @@
                 color: '#9ca3af',
                 textAlign: 'center'
             });
-            footer.innerHTML = 'Gosta do projeto? <span style="color:#f43f5e;">♥</span> Me paga um cafezinho: <a href="https://ko-fi.com/dentparanoide" target="_blank" rel="noopener noreferrer" style="color:#38bdf8; text-decoration: none; font-weight: 600;">ko-fi.com/dentparanoide</a>';
+            footer.innerHTML = 'Gosta do projeto? <span style="color:#f43f5e;">❤</span> Me paga um cafezinho: <a href="https://ko-fi.com/dentparanoide" target="_blank" rel="noopener noreferrer" style="color:#38bdf8; text-decoration: none; font-weight: 600;">ko-fi.com/dentparanoide</a>';
 
-            // Montar conteúdo
+            // Montar conteÃºdo
             content.appendChild(statusEl);
             content.appendChild(promptEl);
             content.appendChild(infoRow);
@@ -484,11 +486,31 @@
             return `${minutes}:${seconds}`;
         }
 
+        function sanitizeUiText(text) {
+            let out = String(text || '');
+            out = out
+                .replace(/Ã¡|Ã¢|Ã£|Ã¤/g, 'a')
+                .replace(/Ã§/g, 'c')
+                .replace(/Ã©|Ãª/g, 'e')
+                .replace(/Ã­/g, 'i')
+                .replace(/Ã³|Ã´|Ãµ/g, 'o')
+                .replace(/Ãº/g, 'u')
+                .replace(/Ã/g, 'A')
+                .replace(/â™¥/g, '❤')
+                .replace(/âœ•/g, '✕')
+                .replace(/â˜•/g, 'Pausa')
+                .replace(/â±ï¸/g, '')
+                .replace(/âœ…|âš ï¸|âŒ|â³|â©|â„¹ï¸|âŒ¨ï¸|â­ï¸/g, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+            return out;
+        }
+
         function updateOverlay({ status, prompt, index, total, elapsedSeconds }) {
             ensureOverlay();
             overlayState.lastData = { status, prompt, index, total };
-            if (overlayState.statusEl) overlayState.statusEl.textContent = status || '...';
-            if (overlayState.promptEl) overlayState.promptEl.textContent = prompt || '';
+            if (overlayState.statusEl) overlayState.statusEl.textContent = sanitizeUiText(status || '...');
+            if (overlayState.promptEl) overlayState.promptEl.textContent = sanitizeUiText(prompt || '');
             if (overlayState.counterEl && total) {
                 overlayState.counterEl.textContent = index
                     ? `Prompt ${index} de ${total}`
@@ -517,14 +539,14 @@
                     const remainingMs = automationState.breakEndTime - Date.now();
                     if (remainingMs > 0) {
                         const remainingSec = Math.ceil(remainingMs / 1000);
-                        overlayState.breakInfoEl.textContent = `☕ Pausa: ${formatDuration(remainingSec)} restantes`;
+                        overlayState.breakInfoEl.textContent = `Pausa: ${formatDuration(remainingSec)} restantes`;
                         overlayState.breakInfoEl.style.color = '#ff9800';
                     } else {
-                        overlayState.breakInfoEl.textContent = '☕ Retomando...';
+                        overlayState.breakInfoEl.textContent = 'Retomando...';
                     }
                 } else {
                     const promptsUntilBreak = (automationState.settings?.breakPrompts || 0) - automationState.promptsSinceLastBreak;
-                    overlayState.breakInfoEl.textContent = `⏱️ Próxima pausa em ${promptsUntilBreak} prompts (${automationState.settings?.breakDuration || 0} min)`;
+                    overlayState.breakInfoEl.textContent = `Proxima pausa em ${promptsUntilBreak} prompts (${automationState.settings?.breakDuration || 0} min)`;
                     overlayState.breakInfoEl.style.color = '#ffcc80';
                 }
             } else if (overlayState.breakInfoEl) {
@@ -637,7 +659,7 @@
 
                 const timer = setTimeout(() => {
                     observer.disconnect();
-                    reject(new Error(`Elemento não encontrado: ${selector}`));
+                    reject(new Error(`Elemento nÃ£o encontrado: ${selector}`));
                 }, timeout);
 
                 observer.observe(document.body, { childList: true, subtree: true });
@@ -663,13 +685,13 @@
                 // Agora enviar mensagem real
                 chrome.runtime.sendMessage(message, (response) => {
                     if (chrome.runtime.lastError) {
-                        console.error('❌ Erro ao enviar mensagem:', chrome.runtime.lastError.message);
+                        console.error('âŒ Erro ao enviar mensagem:', chrome.runtime.lastError.message);
                     } else {
-                        console.log('✅ Mensagem enviada:', response);
+                        console.log('âœ… Mensagem enviada:', response);
                     }
                 });
             } catch (error) {
-                console.error('❌ Falha ao enviar mensagem:', error);
+                console.error('âŒ Falha ao enviar mensagem:', error);
             }
         }
 
@@ -717,6 +739,25 @@
             } catch (e) { }
         }
 
+        function safeSubmitClick(element) {
+            if (!element) return;
+            try {
+                if (element.scrollIntoView) {
+                    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+                }
+                element.focus();
+            } catch (e) { }
+            // Intencionalmente apenas 1 click real para evitar duplo envio.
+            element.click();
+        }
+
+        function closeOpenMenusSafely() {
+            try {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+                document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true }));
+            } catch (e) { }
+        }
+
         function findMoreOptionsButton(parent = document) {
             // 1. Search by aria-label
             const targets = ['mais opcoes', 'more options', 'mais opciones'];
@@ -744,10 +785,10 @@
 
         async function openMenuAndGetItems(button, maxAttempts = 4) {
             for (let i = 0; i < maxAttempts; i++) {
-                console.log(`🔄 Tentativa ${i + 1}/${maxAttempts} de abrir menu...`);
+                console.log(`ðŸ”„ Tentativa ${i + 1}/${maxAttempts} de abrir menu...`);
                 forceClick(button);
 
-                // Poll for menu items - mais rápido
+                // Poll for menu items - mais rÃ¡pido
                 for (let j = 0; j < 6; j++) {
                     await sleep(200);
                     const items = findAllElements('[role="menuitem"]');
@@ -796,7 +837,7 @@
             const normalizedTarget = normalizeAspectRatio(targetRatio);
             if (!normalizedTarget) return null;
 
-            // 1. Tentar busca global primeiro (caso os botões estejam expostos na barra lateral/ferramentas)
+            // 1. Tentar busca global primeiro (caso os botÃµes estejam expostos na barra lateral/ferramentas)
             const allButtons = Array.from(document.querySelectorAll('button'));
             const directMatch = allButtons.find(btn => {
                 const aria = btn.getAttribute('aria-label') || '';
@@ -805,7 +846,7 @@
             });
             if (directMatch) return directMatch;
 
-            // 2. Se não achou direto, procurar em menus abertos
+            // 2. Se nÃ£o achou direto, procurar em menus abertos
             const openMenus = findAllElements('[role="menu"][data-state="open"], [data-radix-menu-content][data-state="open"]');
             for (const menu of openMenus) {
                 const option = Array.from(menu.querySelectorAll('button')).find(btn => {
@@ -822,21 +863,21 @@
         function isAspectRatioSelected(optionButton) {
             if (!optionButton) return false;
 
-            // 1. Atributos padrão ARIA
+            // 1. Atributos padrÃ£o ARIA
             if (optionButton.getAttribute('aria-checked') === 'true' ||
                 optionButton.getAttribute('aria-selected') === 'true' ||
                 optionButton.dataset.state === 'on') return true;
 
-            // 2. Classes de estilo do Grok (Texto e Fundo Primário)
+            // 2. Classes de estilo do Grok (Texto e Fundo PrimÃ¡rio)
             const hasPrimaryText = !!optionButton.querySelector('.text-primary, [class*="text-primary"]');
             const hasPrimaryBg = !!optionButton.querySelector('.bg-primary, [class*="bg-primary"]');
             const hasFontSemibold = !!optionButton.querySelector('.font-semibold');
 
-            // 3. Checar o próprio botão
+            // 3. Checar o prÃ³prio botÃ£o
             const btnClasses = optionButton.className || '';
             const isPrimaryBtn = btnClasses.includes('text-primary') || btnClasses.includes('bg-primary');
 
-            // No HTML que você enviou, o botão ativo tem text-primary e font-semibold
+            // No HTML que vocÃª enviou, o botÃ£o ativo tem text-primary e font-semibold
             return (hasPrimaryText && hasFontSemibold) || hasPrimaryBg || isPrimaryBtn;
         }
 
@@ -854,19 +895,19 @@
         }
 
         async function selectGenerationMode(mode) {
-            console.log(`🎯 [selectGenerationMode] Alvo: ${mode}`);
+            console.log(`ðŸŽ¯ [selectGenerationMode] Alvo: ${mode}`);
 
-            // ── 1. Encontrar o Trigger (Botão que abre o menu) ───────────────────
+            // â”€â”€ 1. Encontrar o Trigger (BotÃ£o que abre o menu) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             let trigger = null;
             for (let i = 0; i < 15; i++) {
-                // Estratégia multi-idioma e multi-page (Imagine vs Chat)
+                // EstratÃ©gia multi-idioma e multi-page (Imagine vs Chat)
                 const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'));
                 trigger = menus.find(b => {
                     const label = (b.getAttribute('aria-label') || '').toLowerCase();
                     const text = (b.textContent || '').toLowerCase();
                     return label.includes('config') || label.includes('sett') ||
-                        label.includes('seleção') || label.includes('selection') ||
-                        text.includes('imagem') || text.includes('vídeo') ||
+                        label.includes('seleÃ§Ã£o') || label.includes('selection') ||
+                        text.includes('imagem') || text.includes('vÃ­deo') ||
                         text.includes('image') || text.includes('video');
                 });
                 if (trigger) break;
@@ -874,11 +915,11 @@
             }
 
             if (!trigger) {
-                console.warn('⚠️ Trigger de modo não encontrado. Tentando prosseguir...');
-                return true;
+                console.warn('âš ï¸ Trigger de modo nÃ£o encontrado. Tentando prosseguir...');
+                return false;
             }
 
-            // ── 2. Tentar abrir o menu e selecionar o item ─────────────────────
+            // â”€â”€ 2. Tentar abrir o menu e selecionar o item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             for (let attempt = 0; attempt < 3; attempt++) {
                 if (trigger.getAttribute('aria-expanded') !== 'true') {
                     forceClick(trigger);
@@ -890,46 +931,61 @@
                     .find(el => el.querySelectorAll('[role="menuitemradio"]').length >= 2);
 
                 if (!modeGroup) {
-                    console.warn(`⏳ Menu de modo não detectado (t- ${attempt + 1}/3).`);
-                    forceClick(trigger); // Tentar clicar novamente para forçar abertura
+                    console.warn(`â³ Menu de modo nÃ£o detectado (t- ${attempt + 1}/3).`);
+                    forceClick(trigger); // Tentar clicar novamente para forÃ§ar abertura
                     await sleep(1000);
                     continue;
                 }
 
                 const items = Array.from(modeGroup.querySelectorAll('[role="menuitemradio"]'));
-                console.log(`📋 Encontrados ${items.length} itens no menu de modo.`);
+                console.log(`ðŸ“‹ Encontrados ${items.length} itens no menu de modo.`);
 
                 let targetBtn = null;
                 if (mode === 'video') {
-                    // Prioridade: SVG Path de vídeo (Câmera)
                     targetBtn = items.find(el => {
+                        const text = normalizeText(el.textContent || '');
+                        return text.includes('video') || text.includes('vÃ­deo');
+                    }) ||
+                    // Prioridade: SVG Path de vÃ­deo (CÃ¢mera)
+                    items.find(el => {
                         const d = Array.from(el.querySelectorAll('path')).map(p => p.getAttribute('d') || '').join(' ');
                         return d.includes('M22.5 19') || d.includes('M18.375') || d.includes('M16.5 8.5V15.5');
-                    }) || items[1]; // Fallback: index 1 é vídeo
+                    }) || items[1]; // Fallback: index 1 Ã© vÃ­deo
                 } else {
                     // Prioridade: SVG Path de imagem (Paisagem)
                     targetBtn = items.find(el => {
                         const d = Array.from(el.querySelectorAll('path')).map(p => p.getAttribute('d') || '').join(' ');
                         return d.includes('M14.0996') || d.includes('M4.50586') || d.includes('M15 7C13');
-                    }) || items[0]; // Fallback: index 0 é imagem
+                    }) || items[0]; // Fallback: index 0 Ã© imagem
                 }
 
                 if (targetBtn) {
                     const isSelected = targetBtn.getAttribute('aria-checked') === 'true';
                     if (!isSelected) {
-                        console.log(`✅ Aplicando modo: ${mode}`);
+                        console.log(`âœ… Aplicando modo: ${mode}`);
                         forceClick(targetBtn);
                         await sleep(600);
                     }
+
+                    // VerificaÃ§Ã£o final no texto do trigger apÃ³s seleÃ§Ã£o
+                    const triggerText = normalizeText(trigger.textContent || '');
+                    const isVideoNow = /video|v[iÃ­]deo/.test(triggerText);
+                    const isImageNow = /image|imagen|imagem/.test(triggerText);
+                    if ((mode === 'video' && !isVideoNow) || (mode === 'image' && !isImageNow)) {
+                        console.warn(`âš ï¸ Modo nÃ£o confirmado apÃ³s clique (trigger="${triggerText}"), tentando novamente...`);
+                        await sleep(400);
+                        continue;
+                    }
+
                     document.body.click(); // Fechar menu
                     await sleep(300);
                     return true;
                 }
             }
 
-            console.warn('⚠️ Não foi possível garantir a seleção do modo.');
+            console.warn('âš ï¸ NÃ£o foi possÃ­vel garantir a seleÃ§Ã£o do modo.');
             document.body.click();
-            return true;
+            return false;
         }
 
 
@@ -937,22 +993,22 @@
             const target = normalizeAspectRatio(aspectRatio);
             if (!target) return false;
 
-            console.log(`🎯 Tentando selecionar proporção: ${target}`);
+            console.log(`ðŸŽ¯ Tentando selecionar proporÃ§Ã£o: ${target}`);
 
-            // 1. Tentar seleção direta primeiro (sem abrir menu)
+            // 1. Tentar seleÃ§Ã£o direta primeiro (sem abrir menu)
             const directOption = findAspectRatioOption(target);
             if (directOption && isVisible(directOption)) {
                 if (isAspectRatioSelected(directOption)) {
-                    console.log(`✅ Proporção ${target} já selecionada.`);
+                    console.log(`âœ… ProporÃ§Ã£o ${target} jÃ¡ selecionada.`);
                     return true;
                 }
-                console.log(`🖱️ Clicando diretamente no botão de proporção ${target}`);
+                console.log(`ðŸ–±ï¸ Clicando diretamente no botÃ£o de proporÃ§Ã£o ${target}`);
                 forceClick(directOption);
                 await sleep(500);
                 if (isAspectRatioSelected(directOption)) return true;
             }
 
-            // 2. Se falhou direto, tentar via menu de opções do modelo
+            // 2. Se falhou direto, tentar via menu de opÃ§Ãµes do modelo
             for (let i = 0; i < 3; i++) {
                 const trigger = findModelOptionsTrigger();
                 if (!trigger) {
@@ -976,7 +1032,7 @@
 
                 if (option) {
                     if (isAspectRatioSelected(option)) {
-                        console.log(`✅ [Menu] Proporção ${target} já selecionada.`);
+                        console.log(`âœ… [Menu] ProporÃ§Ã£o ${target} jÃ¡ selecionada.`);
                         document.body.click();
                         return true;
                     }
@@ -987,7 +1043,7 @@
                 }
             }
 
-            console.warn(`❌ Não foi possível encontrar opção para proporção: ${target}`);
+            console.warn(`âŒ NÃ£o foi possÃ­vel encontrar opÃ§Ã£o para proporÃ§Ã£o: ${target}`);
             return false;
         }
 
@@ -1009,15 +1065,17 @@
 
             if (actualIndex < 0) actualIndex = 0;
 
-            console.log(`📥 [triggerDownload] type=${type}, actualIndex=${actualIndex}, mode=${automationState.mode}`);
+            console.log(`ðŸ“¥ [triggerDownload] type=${type}, actualIndex=${actualIndex}, mode=${automationState.mode}`);
 
-            // Bloqueio Síncrono Imediato
+            // Bloqueio SÃ­ncrono Imediato
+            let preMarkedVideoDownload = false;
             if (type === 'video') {
                 if (automationState.downloadedVideos.has(actualIndex)) {
-                    console.log(`✅ [triggerDownload] Já marcado como baixado para índice ${actualIndex}, abortando.`);
+                    console.log(`âœ… [triggerDownload] JÃ¡ marcado como baixado para Ã­ndice ${actualIndex}, abortando.`);
                     return;
                 }
                 automationState.downloadedVideos.add(actualIndex);
+                preMarkedVideoDownload = true;
                 saveAutomationState();
             }
 
@@ -1034,35 +1092,56 @@
             const ext = type === 'video' ? 'mp4' : 'png';
             const filename = `${actualIndex + 1}_${safePromptName}_${timestamp}.${ext}`;
 
-            const sendToBackground = async (finalUrl) => {
-                console.log(`🚀 [triggerDownload] Enviando para background: ${filename}`);
+            const isRuntimeAvailable = () => {
                 try {
-                    const response = await new Promise((resolve) => {
-                        chrome.runtime.sendMessage({
-                            action: 'DOWNLOAD_IMAGE',
-                            type: 'DOWNLOAD_IMAGE',
-                            url: finalUrl,
-                            filename: filename,
-                            prompt: promptText,
-                            savePromptTxt: automationState.settings?.savePromptTxt || false
-                        }, (resp) => {
-                            if (chrome.runtime.lastError) {
-                                console.warn(`⚠️ [triggerDownload] Erro:`, chrome.runtime.lastError.message);
-                                resolve(null);
-                            } else {
-                                resolve(resp);
-                            }
-                        });
-                    });
-                    if (response && response.success) {
-                        console.log(`✅ [triggerDownload] Resposta do background:`, response);
-                    }
-                } catch (error) {
-                    console.error('❌ Erro no triggerDownload:', error);
+                    return !!(chrome && chrome.runtime && chrome.runtime.id);
+                } catch (e) {
+                    return false;
                 }
             };
 
-            // Se o vídeo vier como blob:, converte para data URL para o background script ter acesso
+            const sendToBackground = async (finalUrl) => {
+                console.log(`ðŸš€ [triggerDownload] Enviando para background: ${filename}`);
+                try {
+                    if (!isRuntimeAvailable()) {
+                        console.warn('WARN [triggerDownload] Runtime indisponivel (context invalidated).');
+                        return false;
+                    }
+                    const response = await new Promise((resolve) => {
+                        try {
+                            chrome.runtime.sendMessage({
+                                action: 'DOWNLOAD_IMAGE',
+                                type: 'DOWNLOAD_IMAGE',
+                                url: finalUrl,
+                                filename: filename,
+                                prompt: promptText,
+                                savePromptTxt: automationState.settings?.savePromptTxt || false
+                            }, (resp) => {
+                                if (chrome.runtime.lastError) {
+                                    console.warn(`âš ï¸ [triggerDownload] Erro:`, chrome.runtime.lastError.message);
+                                    resolve(null);
+                                } else {
+                                    resolve(resp);
+                                }
+                            });
+                        } catch (innerErr) {
+                            console.warn('WARN [triggerDownload] Falha ao chamar sendMessage:', innerErr?.message || innerErr);
+                            resolve(null);
+                        }
+                    });
+                    if (response && response.success) {
+                        console.log(`âœ… [triggerDownload] Resposta do background:`, response);
+                        return true;
+                    }
+                    return false;
+                } catch (error) {
+                    console.error('âŒ Erro no triggerDownload:', error);
+                    return false;
+                }
+            };
+
+            // Se o vÃ­deo vier como blob:, converte para data URL para o background script ter acesso
+            let sentOk = false;
             if (url.startsWith('blob:')) {
                 try {
                     const resp = await fetch(url);
@@ -1073,65 +1152,91 @@
                         reader.onerror = reject;
                         reader.readAsDataURL(blob);
                     });
-                    await sendToBackground(dataUrl);
+                    sentOk = await sendToBackground(dataUrl);
                 } catch (err) {
-                    console.warn('⚠️ Falha ao converter blob, tentando URL original...', err);
-                    await sendToBackground(url);
+                    console.warn('âš ï¸ Falha ao converter blob, tentando URL original...', err);
+                    sentOk = await sendToBackground(url);
                 }
             } else {
-                await sendToBackground(url);
+                sentOk = await sendToBackground(url);
+            }
+
+            if (!sentOk && preMarkedVideoDownload) {
+                console.warn(`WARN [triggerDownload] Download nao confirmado para indice ${actualIndex}. Removendo marca de download para permitir retentativa.`);
+                automationState.downloadedVideos.delete(actualIndex);
+                saveAutomationState();
             }
         };
 
         // --- Upscale Logic ---
-        async function waitForUpscaleComplete(container, maxWaitTime = 60000) {
+        async function waitForUpscaleComplete(container, maxWaitTime = 35000) {
             const startTime = Date.now();
             console.log('⏳ Aguardando upscale HD terminar...');
 
+            const getHdVideoFromContainer = () => {
+                if (!container) return null;
+
+                const directHd = container.querySelector('video#hd-video') ||
+                    container.querySelector('video[src*="generated_video_hd"]') ||
+                    container.querySelector('video source[src*="generated_video_hd"]')?.closest('video');
+                if (directHd) return directHd;
+
+                const videos = Array.from(container.querySelectorAll('video'));
+                return videos.find(v => {
+                    const src = v.currentSrc || v.src || '';
+                    if (!src) return false;
+                    const hasHdHint = src.includes('generated_video_hd') || v.id === 'hd-video';
+                    const looksVisible = v.style.visibility !== 'hidden' && v.style.display !== 'none';
+                    return hasHdHint && looksVisible;
+                }) || null;
+            };
+
             while ((Date.now() - startTime) < maxWaitTime) {
                 try {
-                    // Procurar indicador "HD" na UI (dentro do container)
+                    const hdVideoFast = getHdVideoFromContainer();
+                    if (hdVideoFast) {
+                        const hdSrc = hdVideoFast.currentSrc || hdVideoFast.src || '';
+                        if (hdSrc && hdSrc.startsWith('http')) {
+                            const rs = typeof hdVideoFast.readyState === 'number' ? hdVideoFast.readyState : 0;
+                            console.log(`✅ HD detectado (fast-path). readyState=${rs}`);
+                            return { success: true, url: hdSrc, method: 'extension' };
+                        }
+                    }
+
                     const hdIndicator = Array.from(container.querySelectorAll('div')).find(div => {
                         return div.textContent.trim() === 'HD' && div.classList.contains('absolute') && div.classList.contains('rounded-full');
                     });
 
                     if (hdIndicator) {
                         console.log('✅ Upscale HD concluído! Indicador HD encontrado no container.');
-                        await sleep(1500); // Dar tempo para a tag vídeo mudar
+                        await sleep(600);
 
-                        // Tentar encontrar a tag de vídeo em HD no container
-                        // Segundo a UI, há <video id="hd-video" src="...generated_video_hd.mp4...">
-                        let hdVideo = container.querySelector('video#hd-video') ||
-                            container.querySelector('video[src*="generated_video_hd"]');
-
-                        // Fallback: o vídeo SD fica com "visibility: hidden", e o HD fica "visible"
+                        let hdVideo = getHdVideoFromContainer();
                         if (!hdVideo) {
                             const videos = Array.from(container.querySelectorAll('video'));
                             hdVideo = videos.find(v => v.src && v.style.visibility !== 'hidden' && v.src.includes('generated_video'));
                         }
 
-                        if (hdVideo && hdVideo.src) {
+                        if (hdVideo && (hdVideo.currentSrc || hdVideo.src)) {
+                            const hdSrc = hdVideo.currentSrc || hdVideo.src;
                             console.log('📥 Vídeo HD encontrado, enviando URL do HD para download via extensão...');
-                            return { success: true, url: hdVideo.src, method: 'extension' };
-                        }
-
-                        // Se não achar a URL do vídeo diretamente, tenta o botão de download manual no container
-                        const downloadBtn = Array.from(container.querySelectorAll('button')).find(btn => {
-                            const label = normalizeText(btn.getAttribute('aria-label') || '');
-                            return label.includes('baixar') || label.includes('download');
-                        });
-
-                        if (downloadBtn) {
-                            console.log('📥 URL do vídeo HD não acessível. Clicando no botão de download nativo do container...');
-                            forceClick(downloadBtn);
-                            return { success: true, method: 'click' };
-                        } else {
-                            console.warn('⚠️ Falha ao encontrar link ou botão de download para o HD.');
-                            return { success: false };
+                            return { success: true, url: hdSrc, method: 'extension' };
                         }
                     }
 
-                    await sleep(1000);
+                    const downloadBtn = Array.from(container.querySelectorAll('button')).find(btn => {
+                        const label = normalizeText(btn.getAttribute('aria-label') || '');
+                        return label.includes('baixar') || label.includes('download');
+                    });
+
+                    if (downloadBtn) {
+                        console.log('📥 Botão de download detectado no card. Clicando para não atrasar o fluxo...');
+                        forceClick(downloadBtn);
+                        return { success: true, method: 'click' };
+                    }
+
+                    const elapsed = Date.now() - startTime;
+                    await sleep(elapsed < 10000 ? 500 : 1000);
                 } catch (error) {
                     console.error('Erro ao aguardar upscale:', error);
                 }
@@ -1167,24 +1272,24 @@
                     const isGenerating = generatingText && normalizeText(generatingText.textContent).includes('gerando');
 
                     if (isGenerating) {
-                        console.log(`[${attempt}] 📊 Vídeo ainda gerando...`);
+                        console.log(`[${attempt}] ðŸ“Š VÃ­deo ainda gerando...`);
                         await sleep(1500);
                         continue;
                     }
 
                     if (!videoElement.src || !videoElement.src.includes('generated_video.mp4')) {
-                        console.log(`[${attempt}] ⏳ Aguardando vídeo ter src válido...`);
+                        console.log(`[${attempt}] â³ Aguardando vÃ­deo ter src vÃ¡lido...`);
                         await sleep(1000);
                         continue;
                     }
 
                     if (videoElement.readyState < 2) {
-                        console.log(`[${attempt}] 🔄 Vídeo carregando...`);
+                        console.log(`[${attempt}] ðŸ”„ VÃ­deo carregando...`);
                         await sleep(1000);
                         continue;
                     }
 
-                    console.log(`[${attempt}] ✅ Vídeo pronto! Procurando botão de mais opções...`);
+                    console.log(`[${attempt}] âœ… VÃ­deo pronto! Procurando botÃ£o de mais opÃ§Ãµes...`);
 
                     // Force hover
                     if (container) {
@@ -1208,22 +1313,22 @@
                     }
 
                     if (!moreOptionsBtn) {
-                        console.log(`[${attempt}] ❌ Botão "Mais opções" não encontrado.`);
+                        console.log(`[${attempt}] âŒ BotÃ£o "Mais opÃ§Ãµes" nÃ£o encontrado.`);
                         await sleep(1000);
                         continue;
                     }
 
-                    console.log(`[${attempt}] ✅ Botão encontrado! Clicando...`);
+                    console.log(`[${attempt}] âœ… BotÃ£o encontrado! Clicando...`);
 
                     // 3. Open Menu
                     const menuItems = await openMenuAndGetItems(moreOptionsBtn, 5);
                     if (!menuItems.length) {
-                        console.log(`[${attempt}] ⚠️ Menu não abriu.`);
+                        console.log(`[${attempt}] âš ï¸ Menu nÃ£o abriu.`);
                         await sleep(1000);
                         continue;
                     }
 
-                    console.log(`📋 Menu aberto! Itens: ${menuItems.map(m => normalizeText(m.textContent)).join(' | ')}`);
+                    console.log(`ðŸ“‹ Menu aberto! Itens: ${menuItems.map(m => normalizeText(m.textContent)).join(' | ')}`);
 
                     const upscaleItem = menuItems.find(item => {
                         const hasIcon = item.querySelector('svg.lucide-expand');
@@ -1233,19 +1338,19 @@
 
                     if (upscaleItem) {
                         forceClick(upscaleItem);
-                        console.log('🚀 Upscale solicitado com sucesso!');
+                        console.log('ðŸš€ Upscale solicitado com sucesso!');
                         await sleep(500);
 
                         // Wait for upscale and download
                         return await waitForUpscaleComplete(container);
                     } else {
-                        console.log(`[${attempt}] ⚠️ Opção "Upscale" não encontrada no menu.`);
+                        console.log(`[${attempt}] âš ï¸ OpÃ§Ã£o "Upscale" nÃ£o encontrada no menu.`);
                         forceClick(moreOptionsBtn); // Close menu
                         await sleep(1000);
                     }
 
                 } catch (error) {
-                    console.error(`[${attempt}] ❌ Erro no loop de upscale:`, error);
+                    console.error(`[${attempt}] âŒ Erro no loop de upscale:`, error);
                     await sleep(1000);
                 }
             }
@@ -1288,19 +1393,19 @@
                     for (let attempt = 0; attempt < 2 && !aspectApplied; attempt++) {
                         aspectApplied = await selectAspectRatio(aspectRatio);
                         if (!aspectApplied) {
-                            console.warn(`⚠️ Falha ao aplicar aspect ratio ${aspectRatio} (tentativa ${attempt + 1}/2).`);
+                            console.warn(`âš ï¸ Falha ao aplicar aspect ratio ${aspectRatio} (tentativa ${attempt + 1}/2).`);
                             await sleep(300);
                         }
                     }
 
                     if (!aspectApplied) {
-                        throw new Error(`Não foi possível aplicar a proporção ${aspectRatio} antes do envio.`);
+                        throw new Error(`NÃ£o foi possÃ­vel aplicar a proporÃ§Ã£o ${aspectRatio} antes do envio.`);
                     }
                 }
 
                 const submitButton = findSubmitButton();
                 if (!submitButton || submitButton.disabled) {
-                    // Fallback agnóstico de idioma: tenta Enter no editor
+                    // Fallback agnÃ³stico de idioma: tenta Enter no editor
                     textarea.focus();
                     textarea.dispatchEvent(new KeyboardEvent('keydown', {
                         bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'
@@ -1311,7 +1416,7 @@
                     await sleep(250);
                     return;
                 }
-                forceClick(submitButton);
+                safeSubmitClick(submitButton);
 
             } catch (error) {
                 console.error('Erro ao enviar prompt:', error);
@@ -1320,55 +1425,55 @@
         }
 
         // =========================================================================
-        // FLUXO DE IMAGEM — espelho exato da extensão de referência (pasta temp)
+        // FLUXO DE IMAGEM â€” espelho exato da extensÃ£o de referÃªncia (pasta temp)
         // =========================================================================
 
         /**
-         * PASSO 1 — Configurar proporção da imagem.
-         * NOTA: Já estamos na página /imagine (modo imagem).
-         * O menu de configuração é para selecionar modelo (Aurora, etc.), não Image vs Video.
-         * Portanto não existe botão "Image Mode" para clicar — apenas selecionar a proporção.
+         * PASSO 1 â€” Configurar proporÃ§Ã£o da imagem.
+         * NOTA: JÃ¡ estamos na pÃ¡gina /imagine (modo imagem).
+         * O menu de configuraÃ§Ã£o Ã© para selecionar modelo (Aurora, etc.), nÃ£o Image vs Video.
+         * Portanto nÃ£o existe botÃ£o "Image Mode" para clicar â€” apenas selecionar a proporÃ§Ã£o.
          */
         async function configureImageMode(aspectRatio) {
-            console.log(`🎨 [configureImageMode] Alvo: ${aspectRatio}`);
+            console.log(`ðŸŽ¨ [configureImageMode] Alvo: ${aspectRatio}`);
 
             if (!aspectRatio) return true;
 
             const target = normalizeAspectRatio(aspectRatio);
 
-            // 1. Tentar seleção direta (Muitas vezes os botões já estão na tela)
+            // 1. Tentar seleÃ§Ã£o direta (Muitas vezes os botÃµes jÃ¡ estÃ£o na tela)
             const directBtn = findAspectRatioOption(target);
             if (directBtn && isVisible(directBtn)) {
                 if (isAspectRatioSelected(directBtn)) {
-                    console.log(`✅ Proporção ${target} já está selecionada (direto).`);
+                    console.log(`âœ… ProporÃ§Ã£o ${target} jÃ¡ estÃ¡ selecionada (direto).`);
                     return true;
                 }
-                console.log(`🖱️ Clicando no botão de proporção direto: ${target}`);
+                console.log(`ðŸ–±ï¸ Clicando no botÃ£o de proporÃ§Ã£o direto: ${target}`);
                 forceClick(directBtn);
                 await sleep(1000);
                 if (isAspectRatioSelected(directBtn)) return true;
-                console.log('⚠️ Clique direto não parece ter funcionado, tentando via menu...');
+                console.log('âš ï¸ Clique direto nÃ£o parece ter funcionado, tentando via menu...');
             }
 
-            // 2. Tentar via menu de configurações
+            // 2. Tentar via menu de configuraÃ§Ãµes
             const applied = await selectAspectRatio(target);
             if (!applied) {
-                console.warn(`⚠️ Não foi possível aplicar proporção ${target}, prosseguindo.`);
+                console.warn(`âš ï¸ NÃ£o foi possÃ­vel aplicar proporÃ§Ã£o ${target}, prosseguindo.`);
             }
 
             return true;
         }
 
         /**
-         * PASSO 2 — Inserir prompt e enviar via keydown Enter.
-         * Replica a função E() da extensão temp:
-         *   - textContent = prompt  (não innerHTML)
+         * PASSO 2 â€” Inserir prompt e enviar via keydown Enter.
+         * Replica a funÃ§Ã£o E() da extensÃ£o temp:
+         *   - textContent = prompt  (nÃ£o innerHTML)
          *   - dispatch: input + change
          *   - keydown Enter com keyCode 13
-         * NÃO usa forceClick no botão submit — isso interferia com a geração.
+         * NÃƒO usa forceClick no botÃ£o submit â€” isso interferia com a geraÃ§Ã£o.
          */
         async function insertAndSubmitPromptImage(prompt) {
-            console.log(`📝 [insertAndSubmitPromptImage] "${prompt.substring(0, 40)}..."`);
+            console.log(`ðŸ“ [insertAndSubmitPromptImage] "${prompt.substring(0, 40)}..."`);
 
             let editor = null;
             for (let i = 0; i < 15; i++) {
@@ -1376,51 +1481,51 @@
                 if (editor) break;
                 await sleep(500);
             }
-            if (!editor) throw new Error('Editor não encontrado após 7.5s');
+            if (!editor) throw new Error('Editor nÃ£o encontrado apÃ³s 7.5s');
 
             editor.focus();
             await sleep(200);
 
-            // Inserir texto — igual à extensão temp: textContent para contenteditable
+            // Inserir texto â€” igual Ã  extensÃ£o temp: textContent para contenteditable
             if (editor.isContentEditable) {
                 editor.textContent = prompt;
             } else {
                 editor.value = prompt;
             }
 
-            // Disparar eventos para React reconhecer a mudança
+            // Disparar eventos para React reconhecer a mudanÃ§a
             editor.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
             editor.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
             await sleep(500);
 
-            // Enviar via keydown Enter (keyCode 13) — EXATAMENTE como a extensão temp
+            // Enviar via keydown Enter (keyCode 13) â€” EXATAMENTE como a extensÃ£o temp
             editor.dispatchEvent(new KeyboardEvent('keydown', {
                 key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
                 bubbles: true, cancelable: true
             }));
 
-            console.log('🚀 Prompt enviado via keydown Enter');
+            console.log('ðŸš€ Prompt enviado via keydown Enter');
             await sleep(300);
             return true;
         }
 
         /**
-         * PASSO 3 — Aguardar e baixar imagens finalizadas.
-         * Replica o loop k() da extensão temp para textToImage:
-         *   - Polling a cada 2s, máximo 150 iterações (5 min)
+         * PASSO 3 â€” Aguardar e baixar imagens finalizadas.
+         * Replica o loop k() da extensÃ£o temp para textToImage:
+         *   - Polling a cada 2s, mÃ¡ximo 150 iteraÃ§Ãµes (5 min)
          *   - Procura img[alt="Generated image"] com src.length >= 130000
          *   - Quando outputCount imagens prontas, baixa todas
          */
         async function waitAndDownloadImages(promptIndex, prompt, outputCount, sectionsBefore = -1) {
-            console.log(`🔍 [waitAndDownloadImages] Aguardando ${outputCount} imagem(ns)... (prompt ${promptIndex + 1})`);
-            const maxIterations = 150; // 150 × 2s = 5 minutos
+            console.log(`ðŸ” [waitAndDownloadImages] Aguardando ${outputCount} imagem(ns)... (prompt ${promptIndex + 1})`);
+            const maxIterations = 150; // 150 Ã— 2s = 5 minutos
 
-            // Se sectionsBefore não foi passado, capturar agora (pode já incluir a nova seção)
+            // Se sectionsBefore nÃ£o foi passado, capturar agora (pode jÃ¡ incluir a nova seÃ§Ã£o)
             if (sectionsBefore < 0) {
                 sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
             }
 
-            // Nome seguro para arquivo — igual à função v() da extensão temp
+            // Nome seguro para arquivo â€” igual Ã  funÃ§Ã£o v() da extensÃ£o temp
             const safePromptName = (prompt || 'imagem')
                 .replace(/\s+/g, '-')
                 .replace(/[^a-zA-Z0-9\-]/g, '')
@@ -1430,58 +1535,58 @@
 
             const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
-            // ── PASSO A: Aguardar nova seção masonry aparecer ─────────────────────────
-            // A extensão temp usa h(r.imagineMasonrySection).last() — pega a Última seção.
-            // Quando o Grok recebe o prompt, cria uma nova seção masonry.
-            // Só começamos a polling NAS IMAGENS depois que essa nova seção existir.
-            console.log(`📊 Seções masonry antes: ${sectionsBefore}`);
+            // â”€â”€ PASSO A: Aguardar nova seÃ§Ã£o masonry aparecer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // A extensÃ£o temp usa h(r.imagineMasonrySection).last() â€” pega a Ãšltima seÃ§Ã£o.
+            // Quando o Grok recebe o prompt, cria uma nova seÃ§Ã£o masonry.
+            // SÃ³ comeÃ§amos a polling NAS IMAGENS depois que essa nova seÃ§Ã£o existir.
+            console.log(`ðŸ“Š SeÃ§Ãµes masonry antes: ${sectionsBefore}`);
 
-            // Aguardar nova seção (máx 30s = 15 iterações de 2s)
+            // Aguardar nova seÃ§Ã£o (mÃ¡x 30s = 15 iteraÃ§Ãµes de 2s)
             let newSectionFound = false;
             for (let i = 0; i < 15; i++) {
                 if (!automationState.isRunning) return false;
                 await sleep(2000);
                 const sectionsNow = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
                 if (sectionsNow > sectionsBefore) {
-                    console.log(`✅ Nova seção masonry detectada! (${sectionsNow} seções)`);
+                    console.log(`âœ… Nova seÃ§Ã£o masonry detectada! (${sectionsNow} seÃ§Ãµes)`);
                     newSectionFound = true;
                     break;
                 }
-                console.log(`⏳ Aguardando nova seção... (${sectionsNow}/${sectionsBefore + 1})`);
+                console.log(`â³ Aguardando nova seÃ§Ã£o... (${sectionsNow}/${sectionsBefore + 1})`);
             }
 
             if (!newSectionFound) {
-                console.warn('⚠️ Nenhuma nova seção masonry apareceu. Usando última seção existente.');
+                console.warn('âš ï¸ Nenhuma nova seÃ§Ã£o masonry apareceu. Usando Ãºltima seÃ§Ã£o existente.');
             }
 
-            // ── PASSO B: Polling na ÚLTIMA seção (= geração atual) ────────────────
+            // â”€â”€ PASSO B: Polling na ÃšLTIMA seÃ§Ã£o (= geraÃ§Ã£o atual) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             let iteration = 0;
             while (iteration < maxIterations) {
                 if (!automationState.isRunning) {
-                    console.log('🛑 Automação parada');
+                    console.log('ðŸ›‘ AutomaÃ§Ã£o parada');
                     return false;
                 }
 
-                // Sempre pegar a última seção (mais recente = geração atual)
-                // IGUAL ao .last() da extensão temp
+                // Sempre pegar a Ãºltima seÃ§Ã£o (mais recente = geraÃ§Ã£o atual)
+                // IGUAL ao .last() da extensÃ£o temp
                 const root = getMasonryRoot();
                 const allImgs = Array.from(root.querySelectorAll('img[alt="Generated image"]'));
                 const finalImgs = allImgs.filter(img => {
                     const src = img.src || '';
-                    // PNG = placeholder (gerado durante a geração)
-                    // JPEG = imagem final (concluída)
+                    // PNG = placeholder (gerado durante a geraÃ§Ã£o)
+                    // JPEG = imagem final (concluÃ­da)
                     return src.startsWith('data:image/jpeg') && src.length >= FINAL_IMAGE_SRC_MIN_LENGTH;
                 });
 
                 if (iteration % 5 === 0) {
                     const pngs = allImgs.filter(i => (i.src || '').startsWith('data:image/png')).length;
                     const jpegs = allImgs.filter(i => (i.src || '').startsWith('data:image/jpeg')).length;
-                    console.log(`⏳ [img poll] iter=${iteration} root=${root.id || 'doc'} png=${pngs} jpeg=${jpegs} finais=${finalImgs.length}/${outputCount}`);
+                    console.log(`â³ [img poll] iter=${iteration} root=${root.id || 'doc'} png=${pngs} jpeg=${jpegs} finais=${finalImgs.length}/${outputCount}`);
                 }
 
-                // Quando atingir o número esperado E a primeira tiver src — baixar tudo
+                // Quando atingir o nÃºmero esperado E a primeira tiver src â€” baixar tudo
                 if (finalImgs.length >= outputCount && finalImgs[0].src) {
-                    console.log(`✅ ${finalImgs.length} imagem(ns) finalizada(s)! Iniciando downloads...`);
+                    console.log(`âœ… ${finalImgs.length} imagem(ns) finalizada(s)! Iniciando downloads...`);
 
                     const toDownload = finalImgs.slice(0, outputCount);
 
@@ -1490,11 +1595,11 @@
                         if (!src) continue;
 
                         const letter = letters[i] || `_${i + 1}`;
-                        // Filename exatamente igual à extensão temp:
+                        // Filename exatamente igual Ã  extensÃ£o temp:
                         //   {promptIndex}_{safePromptName}_{letter}.jpg
                         const filename = `${promptIndex}_${safePromptName}_${letter}.jpg`;
 
-                        console.log(`📥 Download [${i + 1}/${toDownload.length}]: ${filename}`);
+                        console.log(`ðŸ“¥ Download [${i + 1}/${toDownload.length}]: ${filename}`);
 
                         try {
                             const result = await chrome.runtime.sendMessage({
@@ -1506,12 +1611,12 @@
                             });
 
                             if (result && result.success) {
-                                console.log(`✅ Download iniciado: ${filename} (id=${result.downloadId})`);
+                                console.log(`âœ… Download iniciado: ${filename} (id=${result.downloadId})`);
                             } else {
-                                console.warn(`⚠️ Download falhou: ${result?.error || 'sem resposta'}`);
+                                console.warn(`âš ï¸ Download falhou: ${result?.error || 'sem resposta'}`);
                             }
                         } catch (err) {
-                            console.error(`❌ Erro ao enviar DOWNLOAD_IMAGE:`, err);
+                            console.error(`âŒ Erro ao enviar DOWNLOAD_IMAGE:`, err);
                         }
 
                         if (i < toDownload.length - 1) await sleep(500);
@@ -1521,20 +1626,20 @@
                     return true;
                 }
 
-                await sleep(2000); // Polling a cada 2s — idêntico à extensão temp
+                await sleep(2000); // Polling a cada 2s â€” idÃªntico Ã  extensÃ£o temp
                 iteration++;
             }
 
-            console.warn('⚠️ Timeout (5min) aguardando imagens. Prosseguindo sem download.');
+            console.warn('âš ï¸ Timeout (5min) aguardando imagens. Prosseguindo sem download.');
             return false;
         }
 
         /**
-         * Função principal do modo imagem — replica exatamente o fluxo da extensão temp.
+         * FunÃ§Ã£o principal do modo imagem â€” replica exatamente o fluxo da extensÃ£o temp.
          */
 
         async function waitAndDownloadVideo(promptIndex, prompt, sectionsBefore = -1) {
-            console.log(`🎬 [waitAndDownloadVideo] Aguardando vídeo... (prompt ${promptIndex + 1}) sectionsBefore=${sectionsBefore}`);
+            console.log(`[waitAndDownloadVideo] Aguardando video... (prompt ${promptIndex + 1}) sectionsBefore=${sectionsBefore}`);
             const maxIterations = 150; // 5 min
 
             if (sectionsBefore < 0) {
@@ -1546,7 +1651,7 @@
                 if (!automationState.isRunning) return false;
                 const sectionsNow = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
                 if (sectionsNow > sectionsBefore) {
-                    console.log(`✅ Nova seção detectada (seção ${sectionsNow})`);
+                    console.log(`OK Nova secao detectada (secao ${sectionsNow})`);
                     newSectionFound = true;
                     break;
                 }
@@ -1570,33 +1675,57 @@
             let iteration = 0;
             while (iteration < maxIterations) {
                 if (!automationState.isRunning) return false;
-                // Se o MutationObserver já tiver baixado o vídeo, podemos prosseguir
+                // Se o MutationObserver jÃ¡ tiver baixado o vÃ­deo, podemos prosseguir
                 if (automationState.downloadedVideos.has(promptIndex)) {
-                    console.log(`⏩ [waitAndDownloadVideo] Vídeo ${promptIndex + 1} já baixado (via Observer), prosseguindo.`);
+                    console.log(`OK [waitAndDownloadVideo] Video ${promptIndex + 1} ja baixado (via Observer), prosseguindo.`);
                     return true;
                 }
-                const root = getMasonryRoot();
-                const videos = Array.from(root.querySelectorAll('video'));
-                const readyVideos = videos.filter(v => v.src && v.src.length > 50);
+                // No fluxo /imagine/more o video pode aparecer com source interno ou URL sem "generated_video".
+                // Buscar em video + source e usar sinais de prontidao (readyState/duration/videoWidth).
+                const allVideos = Array.from(document.querySelectorAll('video'));
+                const videosFromSource = Array.from(document.querySelectorAll('video source[src]'))
+                    .map(s => s.closest('video'))
+                    .filter(Boolean);
+                const uniqueVideos = Array.from(new Set([...allVideos, ...videosFromSource]));
+
+                const readyVideos = uniqueVideos.filter(v => {
+                    const src = v.currentSrc || v.src || v.querySelector('source')?.src || '';
+                    if (!src || src.length < 16) return false;
+
+                    const hasKnownVideoUrl = /blob:|generated_video|\.mp4|videodelivery|manifest|m3u8|video/i.test(src);
+                    const hasPlaybackSignals = (v.readyState >= 2) || (Number.isFinite(v.duration) && v.duration > 0) || (v.videoWidth > 0);
+                    return hasKnownVideoUrl || hasPlaybackSignals;
+                });
+                // Em /imagine/more o Grok pode mostrar cards de imagem enquanto prepara o vÃ­deo.
+                // NÃ£o tratar isso como erro prematuro; manter polling atÃ© vÃ­deo aparecer ou timeout.
 
                 if (iteration % 5 === 0) {
-                    console.log(`⏳ [video poll] iter=${iteration} ready=${readyVideos.length}`);
-                    updateOverlay({ status: 'Gerando vídeo...', prompt, index: promptIndex + 1, total: automationState.prompts.length });
+                    const sampleSrc = readyVideos[0] ? (readyVideos[0].currentSrc || readyVideos[0].src || '').slice(0, 120) : '';
+                    console.log(`WAIT [video poll] iter=${iteration} ready=${readyVideos.length} path=${window.location.pathname} src="${sampleSrc}"`);
+                    updateOverlay({ status: 'Gerando video...', prompt, index: promptIndex + 1, total: automationState.prompts.length });
                 }
 
-                if (readyVideos.length > 0 && readyVideos[0].src) {
-                    console.log(`✅ Vídeo pronto! Chamando processVideoElement (prompt ${promptIndex + 1})`);
+                if (readyVideos.length > 0) {
+                    console.log(`OK Video pronto! Chamando processVideoElement (prompt ${promptIndex + 1})`);
                     await processVideoElement(readyVideos[0], promptIndex);
                     return true;
                 }
-                await sleep(1000); // Polling mais rápido (1s)
+
+                // Se ficar preso em /imagine/more sem detectar video, voltar para /imagine e tentar novamente pelo retry do item.
+                if (iteration > 45 && window.location.pathname.includes('/imagine/more/')) {
+                    console.warn('WARN Timeout parcial em /imagine/more sem video detectado. Voltando para /imagine para retentativa.');
+                    await saveAutomationState();
+                    window.location.href = 'https://grok.com/imagine';
+                    return false;
+                }
+                await sleep(1000); // Polling mais rÃ¡pido (1s)
                 iteration++;
             }
             return false;
         }
 
         function handleAutomationComplete() {
-            console.log('🏁 handleAutomationComplete chamado');
+            console.log('ðŸ handleAutomationComplete chamado');
             const totalItems = automationState.mode === 'image-to-video'
                 ? (automationState.imageQueue?.length || 0)
                 : (automationState.prompts?.length || 0);
@@ -1610,7 +1739,7 @@
             });
 
             updateOverlay({
-                status: 'Concluído',
+                status: 'ConcluÃ­do',
                 prompt: `Todas as ${itemType} processadas`,
                 index: totalItems,
                 total: totalItems,
@@ -1618,7 +1747,7 @@
             });
 
             resetAutomation({ keepOverlay: true, stopTimer: true });
-            console.log('🏁 Automação finalizada');
+            console.log('ðŸ AutomaÃ§Ã£o finalizada');
         }
 
         function resetAutomation(options = {}) {
@@ -1641,6 +1770,7 @@
                 processedVideoUrls: new Set(), // Added from override
                 imageDownloadInitiated: false,
                 awaitingImageCompletion: false,
+                imageToVideoRetries: {},
                 promptsSinceLastBreak: 0,
                 isOnBreak: false,
                 breakEndTime: null
@@ -1660,7 +1790,7 @@
 
             const isImaginePage = window.location.pathname.includes('/imagine');
             if (!isImaginePage) {
-                console.log('🔄 Redirecionando para /imagine...');
+                console.log('ðŸ”„ Redirecionando para /imagine...');
                 await saveAutomationState();
                 window.location.href = 'https://grok.com/imagine';
                 return;
@@ -1671,12 +1801,12 @@
             let currentAspectRatio = null;
             if (automationState.settings?.randomize && automationState.settings?.aspectRatios?.length > 0) {
                 currentAspectRatio = automationState.settings.aspectRatios[Math.floor(Math.random() * automationState.settings.aspectRatios.length)];
-                console.log(`🎲 Proporção randomizada: ${currentAspectRatio}`);
+                console.log(`ðŸŽ² ProporÃ§Ã£o randomizada: ${currentAspectRatio}`);
             } else {
                 currentAspectRatio = automationState.settings?.fixedRatio || (automationState.settings?.aspectRatio) || '3:2';
             }
 
-            // --- Configurações Iniciais do Modelo (Duração, Resolução, Proporção) ---
+            // --- ConfiguraÃ§Ãµes Iniciais do Modelo (DuraÃ§Ã£o, ResoluÃ§Ã£o, ProporÃ§Ã£o) ---
             if (automationState.mode === 'video' || !automationState.modeApplied) {
                 await selectGenerationMode(automationState.mode);
                 automationState.modeApplied = true;
@@ -1693,21 +1823,21 @@
                 }
             }
 
-            // Aplicar Proporção SEMPRE, inclusive para vídeo text-to
+            // Aplicar ProporÃ§Ã£o SEMPRE, inclusive para vÃ­deo text-to
             if (currentAspectRatio) {
-                console.log(`🎰 [Prompt ${automationState.currentIndex + 1}] Proporção alvo: ${currentAspectRatio}`);
+                console.log(`ðŸŽ° [Prompt ${automationState.currentIndex + 1}] ProporÃ§Ã£o alvo: ${currentAspectRatio}`);
                 updateOverlay({
-                    status: `Configurando Proporção [${currentAspectRatio}]...`,
+                    status: `Configurando ProporÃ§Ã£o [${currentAspectRatio}]...`,
                     prompt: currentPrompt,
                     index: automationState.currentIndex + 1,
                     total: automationState.prompts.length
                 });
                 await configureImageMode(currentAspectRatio);
-                await sleep(500); // Aguardar estabilização após config
+                await sleep(500); // Aguardar estabilizaÃ§Ã£o apÃ³s config
             }
 
             updateOverlay({
-                status: automationState.mode === 'video' ? 'Gerando vídeo' : 'Gerando imagem',
+                status: automationState.mode === 'video' ? 'Gerando vÃ­deo' : 'Gerando imagem',
                 prompt: currentPrompt,
                 index: automationState.currentIndex + 1,
                 total: automationState.prompts.length
@@ -1740,7 +1870,7 @@
                     if (automationState.settings?.breakEnabled && automationState.promptsSinceLastBreak >= (automationState.settings?.breakPrompts || 0)) {
                         const breakMs = (automationState.settings.breakDuration || 3) * 60 * 1000;
                         automationState.isOnBreak = true;
-                        updateOverlay({ status: '☕ Pausa', prompt: `Descansando...`, index: automationState.currentIndex, total: automationState.prompts.length });
+                        updateOverlay({ status: 'â˜• Pausa', prompt: `Descansando...`, index: automationState.currentIndex, total: automationState.prompts.length });
                         await sleep(breakMs);
                         automationState.isOnBreak = false;
                         automationState.promptsSinceLastBreak = 0;
@@ -1749,14 +1879,14 @@
                         ? parseInt(automationState.settings.promptDelaySeconds)
                         : (automationState.delay || 45);
                     const delayMs = Math.max(2, delaySeconds) * 1000;
-                    console.log(`⏱️ Aguardando ${delayMs / 1000}s para o próximo prompt...`);
+                    console.log(`â±ï¸ Aguardando ${delayMs / 1000}s para o prÃ³ximo prompt...`);
                     await sleep(delayMs);
                     automationState.timeoutId = setTimeout(runAutomation, 100);
                 } else {
                     handleAutomationComplete();
                 }
             } catch (error) {
-                console.error('❌ Erro na automação:', error);
+                console.error('âŒ Erro na automaÃ§Ã£o:', error);
                 handleAutomationComplete();
             }
         }
@@ -1796,7 +1926,7 @@
             for (const selector of selectors) {
                 const editor = document.querySelector(selector);
                 if (editor) {
-                    console.log('✅ Editor encontrado:', selector);
+                    console.log('âœ… Editor encontrado:', selector);
                     return editor;
                 }
             }
@@ -1806,7 +1936,7 @@
 
         // Helper: Upload image to Grok via file input
         async function uploadImageToGrok(imageData, filename) {
-            console.log('📤 Procurando input[type="file"] na página...');
+            console.log('ðŸ“¤ Procurando input[type="file"] na pÃ¡gina...');
 
             // Find file input - try multiple strategies
             let fileInput = document.querySelector('input[type="file"]');
@@ -1829,7 +1959,7 @@
 
             // If still not found, we might need to click the attach button first to create it
             if (!fileInput) {
-                console.log('⚠️ Input de arquivo não encontrado, tentando clicar no botão Anexar...');
+                console.log('âš ï¸ Input de arquivo nÃ£o encontrado, tentando clicar no botÃ£o Anexar...');
                 const attachBtn = document.querySelector('button[aria-label="Anexar"]') ||
                     document.querySelector('button svg path[d*="M10 9V15"]')?.closest('button');
 
@@ -1846,7 +1976,7 @@
                             const pathData = Array.from(paths).map(p => p.getAttribute('d') || '').join(' ');
                             // Look for file icon (paths with M11 20H8 and M21 18 are file icons)
                             if (pathData.includes('M11 20') || pathData.includes('M20 8V11')) {
-                                console.log('✅ Menu item de upload encontrado, clicando...');
+                                console.log('âœ… Menu item de upload encontrado, clicando...');
                                 forceClick(item);
                                 await sleep(1500);
                                 break;
@@ -1860,13 +1990,13 @@
             }
 
             if (!fileInput) {
-                throw new Error('Input de arquivo não encontrado na página');
+                throw new Error('Input de arquivo nÃ£o encontrado na pÃ¡gina');
             }
 
-            console.log('✅ Input de arquivo encontrado:', fileInput);
+            console.log('âœ… Input de arquivo encontrado:', fileInput);
 
             // Convert base64 to File
-            console.log('💾 Convertendo base64 para File...');
+            console.log('ðŸ’¾ Convertendo base64 para File...');
             const file = dataURLtoFile(imageData, filename);
 
             // Create DataTransfer and add file
@@ -1877,7 +2007,7 @@
             fileInput.files = dataTransfer.files;
 
             // Dispatch change event to trigger upload
-            console.log('🚀 Disparando evento change no input...');
+            console.log('ðŸš€ Disparando evento change no input...');
             const changeEvent = new Event('change', { bubbles: true });
             fileInput.dispatchEvent(changeEvent);
 
@@ -1887,6 +2017,97 @@
             fileInput.dispatchEvent(inputEvent);
 
             return true;
+        }
+
+        // Helper: Open attach menu and pick "Animate image" action (language-agnostic)
+        async function openAttachAndChooseAnimateImage() {
+            const findAttachButton = () => {
+                const editor = findEditor();
+                const scope = editor?.closest('form, [class*="query"], [class*="composer"], [class*="chat"]') || document;
+
+                // Prefer attach button by stable icon path (plus inside image icon)
+                const iconPathFragment = 'M19 17H22V19H19V22H17V19H14V17H17V14H19V17Z';
+                const byIcon = Array.from(scope.querySelectorAll('button[aria-haspopup="menu"]')).find(btn =>
+                    !!btn.querySelector(`path[d*="${iconPathFragment}"]`) && isVisible(btn) && !btn.disabled
+                );
+                if (byIcon) return byIcon;
+
+                // Fallback by aria-label in common languages
+                const byLabel = Array.from(scope.querySelectorAll('button[aria-haspopup="menu"]')).find(btn => {
+                    const label = normalizeText(btn.getAttribute('aria-label') || '');
+                    return (
+                        label.includes('anex') || label.includes('attach') || label.includes('upload') ||
+                        label.includes('adjuntar') || label.includes('joindre') || label.includes('anhang')
+                    ) && isVisible(btn) && !btn.disabled;
+                });
+                if (byLabel) return byLabel;
+
+                return null;
+            };
+
+            const findAnimateItem = (menu) => {
+                const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+                if (!items.length) return null;
+
+                const scored = items.map(item => {
+                    const text = normalizeText(item.textContent || '');
+                    let score = 0;
+
+                    if (
+                        (text.includes('anim') && (text.includes('imag') || text.includes('image') || text.includes('imagen') || text.includes('imagem'))) ||
+                        (text.includes('video') && text.includes('transform'))
+                    ) score += 10;
+
+                    // Path fragment from your provided "Animar imagem" menu icon
+                    if (item.querySelector('path[d*="M14.5 15.7158"]')) score += 8;
+
+                    // Usually this item has title + subtitle
+                    if (item.querySelectorAll('span').length >= 2) score += 2;
+
+                    return { item, score };
+                }).sort((a, b) => b.score - a.score);
+
+                if (scored[0]?.score > 0) return scored[0].item;
+                return null;
+            };
+
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const attachBtn = findAttachButton();
+                if (!attachBtn) {
+                    await sleep(350);
+                    continue;
+                }
+
+                forceClick(attachBtn);
+                await sleep(450);
+
+                const triggerId = attachBtn.id;
+                let menu = null;
+                if (triggerId) {
+                    menu = document.querySelector(`[role="menu"][data-state="open"][aria-labelledby="${triggerId}"]`);
+                }
+                if (!menu) {
+                    menu = document.querySelector('[role="menu"][data-state="open"]');
+                }
+                if (!menu) {
+                    await sleep(300);
+                    continue;
+                }
+
+                const animateItem = findAnimateItem(menu);
+                if (!animateItem) {
+                    await sleep(250);
+                    continue;
+                }
+
+                forceClick(animateItem);
+                await sleep(600);
+                console.log('âœ… AÃ§Ã£o de animar imagem selecionada no menu de anexo.');
+                return true;
+            }
+
+            console.warn('âš ï¸ NÃ£o foi possÃ­vel selecionar a aÃ§Ã£o de animar imagem no menu de anexo.');
+            return false;
         }
 
         // Helper: Select Video Duration
@@ -1899,84 +2120,76 @@
 
             const possibleValues = durationMap[targetDuration] || [targetDuration];
 
-            console.log(`🎯 Selecionando duração: ${targetDuration}`);
+            console.log(`ðŸŽ¯ Selecionando duraÃ§Ã£o: ${targetDuration}`);
 
-            // Abrir o menu de modelo (usando a mesma robustez de selectGenerationMode)
+            // Abrir o menu de configurações do modelo
             let trigger = null;
-            for (let i = 0; i < 15; i++) {
-                const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'));
-                trigger = menus.find(b => {
-                    const label = (b.getAttribute('aria-label') || '').toLowerCase();
-                    const text = (b.textContent || '').toLowerCase();
-                    return label.includes('config') || label.includes('sett') ||
-                        label.includes('seleção') || label.includes('selection') ||
-                        text.includes('imagem') || text.includes('vídeo') ||
-                        text.includes('image') || text.includes('video');
-                });
+            for (let i = 0; i < 8; i++) {
+                trigger = findModelOptionsTrigger();
                 if (trigger) break;
-                await sleep(500);
+                await sleep(300);
             }
 
             if (!trigger) {
-                console.warn('⚠️ Trigger de modelo não encontrado para selecionar duração');
+                console.warn('âš ï¸ Trigger de modelo nÃ£o encontrado para selecionar duraÃ§Ã£o');
                 return false;
             }
 
             if (trigger.getAttribute('aria-expanded') !== 'true') {
-                console.log('🔔 Abrindo menu de modelo...');
+                console.log('ðŸ”” Abrindo menu de modelo...');
                 forceClick(trigger);
-                await sleep(1000);
+                await sleep(700);
             }
 
-            // Procurar o container que contém "Duração" ou os botões de tempo
-            const groupItems = Array.from(document.querySelectorAll('[role="group"], [role="menuitem"], [data-radix-popper-content-wrapper] div'));
+            // Restringir estritamente ao menu aberto vinculado ao trigger para evitar cliques em elementos fora do painel.
+            const openMenu = findOpenAspectMenuForTrigger(trigger);
+            if (!openMenu) {
+                console.warn('âš ï¸ Menu de configuraÃ§Ãµes nÃ£o abriu para selecionar duraÃ§Ã£o.');
+                return false;
+            }
+
+            // Procurar o container que contém "Duração" ou botões 6s/10s apenas dentro do menu aberto
+            const groupItems = Array.from(openMenu.querySelectorAll('[role="group"], [role="menuitem"], div'));
             let durationMenuItem = null;
 
             for (const item of groupItems) {
                 const itemText = normalizeText(item.textContent);
-                // Detectar pelo título (multi-idioma) OU se contém botões específicos de tempo (6s, 10s)
-                const hasDurationTitle = /duracao|duration|duración|tempo/i.test(itemText);
+                // Detectar pelo tÃ­tulo (multi-idioma) OU se contÃ©m botÃµes especÃ­ficos de tempo (6s, 10s)
+                const hasDurationTitle = /duracao|duration|duraciÃ³n|tempo/i.test(itemText);
                 const hasTimeButtons = item.querySelector('button[aria-label*="s"], button[aria-label*="s"]');
 
                 if (hasDurationTitle || (hasTimeButtons && item.querySelectorAll('button').length >= 2)) {
                     durationMenuItem = item;
-                    console.log('🎯 Container de duração encontrado:', itemText.substring(0, 50));
+                    console.log('ðŸŽ¯ Container de duraÃ§Ã£o encontrado:', itemText.substring(0, 50));
                     break;
                 }
             }
 
             if (!durationMenuItem) {
-                console.warn('⚠️ Menu de duração não encontrado no menu aberto. Tentando busca global por botões...');
-                // Fallback: se não achar o container, tenta pegar qualquer botão que pareça ser de duração
-                const allButtons = Array.from(document.querySelectorAll('button[aria-label]'));
-                const possibleButtons = allButtons.filter(b => /^(6s|10s)$/i.test(b.getAttribute('aria-label') || ''));
-                if (possibleButtons.length > 0) {
-                    console.log('🎯 Encontrados botões de duração via busca global.');
-                    durationMenuItem = possibleButtons[0].parentElement;
-                }
+                console.warn('âš ï¸ Menu de duraÃ§Ã£o nÃ£o encontrado dentro do painel de configuraÃ§Ã£o.');
             }
 
             if (!durationMenuItem) {
-                console.warn('⚠️ Menu de duração realmente não encontrado.');
+                console.warn('âš ï¸ Menu de duraÃ§Ã£o realmente nÃ£o encontrado.');
                 return false;
             }
 
-            // Procurar botões dentro do menuitem de duração
+            // Procurar botÃµes dentro do menuitem de duraÃ§Ã£o
             const durationButtons = durationMenuItem.querySelectorAll('button');
-            console.log(`🔍 ${durationButtons.length} botões de duração encontrados`);
+            console.log(`ðŸ” ${durationButtons.length} botÃµes de duraÃ§Ã£o encontrados`);
 
             if (durationButtons.length === 0) {
-                console.warn('⚠️ Nenhum botão de duração encontrado no menuitem');
-                document.body.click();
+                console.warn('âš ï¸ Nenhum botÃ£o de duraÃ§Ã£o encontrado no menuitem');
+                closeOpenMenusSafely();
                 return false;
             }
 
             for (const btn of durationButtons) {
                 const btnText = normalizeText(btn.textContent);
                 const ariaLabel = btn.getAttribute('aria-label') || '';
-                console.log(`  - Botão: "${btnText}" (aria-label: "${ariaLabel}")`);
+                console.log(`  - BotÃ£o: "${btnText}" (aria-label: "${ariaLabel}")`);
 
-                // Verificar se o botão corresponde à duração desejada
+                // Verificar se o botÃ£o corresponde Ã  duraÃ§Ã£o desejada
                 const isMatch = possibleValues.some(val =>
                     btnText === val.toLowerCase() ||
                     ariaLabel === val ||
@@ -1984,35 +2197,34 @@
                 );
 
                 if (isMatch) {
-                    console.log(`✅ Duração ${targetDuration} encontrada, clicando...`);
-                    console.log('🔍 Botão HTML:', btn.outerHTML.substring(0, 150));
+                    console.log(`âœ… DuraÃ§Ã£o ${targetDuration} encontrada, clicando...`);
+                    console.log('ðŸ” BotÃ£o HTML:', btn.outerHTML.substring(0, 150));
                     forceClick(btn);
-                    await sleep(1000); // Aguardar mais para a seleção ser aplicada
+                    await sleep(1000); // Aguardar mais para a seleÃ§Ã£o ser aplicada
 
-                    // Verificar se a duração foi selecionada (botão deve ter classe ativa)
+                    // Verificar se a duraÃ§Ã£o foi selecionada (botÃ£o deve ter classe ativa)
                     const isSelected = btn.classList.contains('text-primary') ||
                         btn.classList.contains('font-semibold') ||
                         btn.getAttribute('aria-pressed') === 'true';
 
-                    console.log(`📊 Botão selecionado: ${isSelected}`);
+                    console.log(`ðŸ“Š BotÃ£o selecionado: ${isSelected}`);
 
-                    // Fechar menu clicando fora
-                    document.body.click();
+                    // Fechar menu sem clicar no body (evita abrir /imagine/more por clique acidental)
+                    closeOpenMenusSafely();
                     await sleep(300);
 
                     return true;
                 }
             }
 
-            console.warn(`⚠️ Duração ${targetDuration} não encontrada entre os botões`);
-            console.log('🔍 Botões disponíveis:', Array.from(durationButtons).map(b => ({
+            console.warn(`âš ï¸ DuraÃ§Ã£o ${targetDuration} nÃ£o encontrada entre os botÃµes`);
+            console.log('ðŸ” BotÃµes disponÃ­veis:', Array.from(durationButtons).map(b => ({
                 text: normalizeText(b.textContent),
                 ariaLabel: b.getAttribute('aria-label'),
                 classes: b.className
             })));
 
-            // Fechar menu clicando fora
-            document.body.click();
+            closeOpenMenusSafely();
             await sleep(300);
             return false;
         }
@@ -2020,7 +2232,7 @@
         // Helper: Select Resolution
         async function selectResolution(targetResolution) {
             const target = targetResolution || '480p'; // default 480p
-            console.log(`🎯 Selecionando resolução: ${target}`);
+            console.log(`ðŸŽ¯ Selecionando resoluÃ§Ã£o: ${target}`);
 
             // Find resolution buttons
             // They are usually visible directly on the UI or inside a menu? 
@@ -2042,66 +2254,72 @@
             // User provided HTML suggests they are standalone buttons in a flex container.
 
             if (btn) {
-                console.log(`✅ Botão de resolução ${target} encontrado! Clicando...`);
+                console.log(`âœ… BotÃ£o de resoluÃ§Ã£o ${target} encontrado! Clicando...`);
                 forceClick(btn);
                 await sleep(500);
                 return true;
             }
 
-            console.warn(`⚠️ Botão de resolução ${target} não encontrado na interface principal.`);
+            console.warn(`âš ï¸ BotÃ£o de resoluÃ§Ã£o ${target} nÃ£o encontrado na interface principal.`);
 
-            // Fallback: Check inside model menu (just in case)
-            const trigger = document.getElementById('model-select-trigger') ||
-                document.querySelector('button[aria-label="Seleção de modelo"]') ||
-                document.querySelector('button[id*="model"]') ||
-                document.querySelector('button:has(svg.lucide-play)');
+            // Fallback: verificar somente no menu de configurações do modelo
+            const trigger = findModelOptionsTrigger();
 
             if (trigger) {
-                console.log('🔍 Verificando menu de modelo para resolução...');
+                console.log('ðŸ” Verificando menu de modelo para resoluÃ§Ã£o...');
                 forceClick(trigger);
                 await sleep(1000);
 
-                const menuItems = findAllElements('[role="menuitem"] button');
-                btn = Array.from(menuItems).find(b =>
+                const openMenu = findOpenAspectMenuForTrigger(trigger);
+                const menuButtons = openMenu ? findAllElements('button', openMenu) : [];
+                btn = Array.from(menuButtons).find(b =>
                     normalizeText(b.textContent) === target ||
                     b.getAttribute('aria-label') === target
                 );
 
                 if (btn) {
-                    console.log(`✅ Botão de resolução ${target} encontrado no menu! Clicando...`);
+                    console.log(`âœ… BotÃ£o de resoluÃ§Ã£o ${target} encontrado no menu! Clicando...`);
                     forceClick(btn);
                     await sleep(500);
-                    document.body.click(); // Close menu
+                    closeOpenMenusSafely();
                     return true;
                 }
 
-                document.body.click(); // Close menu
+                closeOpenMenusSafely();
             }
 
             return false;
         }
 
         async function runImageToVideoAutomation() {
-            if (!automationState.isRunning || !automationState.imageQueue || automationState.currentImageIndex >= automationState.imageQueue.length) {
-                handleAutomationComplete();
+            if (imageToVideoRunLock) {
+                console.log('WARN [image-to-video] Execucao ja em andamento. Ignorando chamada duplicada.');
                 return;
             }
+            imageToVideoRunLock = true;
+            let willNavigate = false;
+            try {
+                if (!automationState.isRunning || !automationState.imageQueue || automationState.currentImageIndex >= automationState.imageQueue.length) {
+                    handleAutomationComplete();
+                    return;
+                }
 
             // Check if we're on a post page - redirect to /imagine if so (post pages have no editor)
             const isPostPage = window.location.pathname.includes('/imagine/post/');
 
-            if (isPostPage) {
-                console.log(`🔄 [image-to-video] Redirecionando para /imagine pois página de post não tem editor`);
-                await saveAutomationState();
-                window.location.href = 'https://grok.com/imagine';
-                return;
-            }
+                if (isPostPage) {
+                    console.log(`RETRY [image-to-video] Redirecionando para /imagine pois pagina de post nao tem editor`);
+                    await saveAutomationState();
+                    willNavigate = true;
+                    window.location.href = 'https://grok.com/imagine';
+                    return;
+                }
 
             // Sync global index for observers
             automationState.currentIndex = automationState.currentImageIndex;
 
             const currentImage = automationState.imageQueue[automationState.currentImageIndex];
-            console.log(`📸 Processando imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}: ${currentImage.name}`);
+            console.log(`ðŸ“¸ Processando imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}: ${currentImage.name}`);
 
             updateOverlay({
                 status: 'Preparando upload...',
@@ -2114,7 +2332,7 @@
                 // Get image data from storage
                 const storedImage = await chrome.storage.local.get(currentImage.id);
                 if (!storedImage || !storedImage[currentImage.id]) {
-                    throw new Error(`Imagem ${currentImage.id} não encontrada no storage`);
+                    throw new Error(`Imagem ${currentImage.id} nÃ£o encontrada no storage`);
                 }
 
                 const imgData = storedImage[currentImage.id];
@@ -2126,19 +2344,19 @@
                 let editor = findEditor();
                 let attempts = 0;
                 while (!editor && attempts < 10) {
-                    console.log(`⏳ Aguardando editor... tentativa ${attempts + 1}/10`);
+                    console.log(`â³ Aguardando editor... tentativa ${attempts + 1}/10`);
                     await sleep(800);
                     editor = findEditor();
                     attempts++;
                 }
 
                 if (!editor) {
-                    throw new Error('Editor não encontrado na página após 10 tentativas');
+                    throw new Error('Editor nÃ£o encontrado na pÃ¡gina apÃ³s 10 tentativas');
                 }
 
                 // Insert prompt text BEFORE uploading image
                 if (imagePrompt && imagePrompt.trim()) {
-                    console.log(`📝 Step 0: Inserindo prompt no editor antes do upload...`);
+                    console.log(`ðŸ“ Step 0: Inserindo prompt no editor antes do upload...`);
                     updateOverlay({
                         status: 'Inserindo prompt...',
                         prompt: imagePrompt,
@@ -2147,116 +2365,92 @@
                     });
 
                     simulateTyping(editor, imagePrompt);
-                    console.log('✅ Prompt inserido no editor');
+                    console.log('âœ… Prompt inserido no editor');
                     await sleep(800);
                 } else {
-                    console.log('ℹ️ Nenhum prompt para inserir (campo vazio)');
+                    console.log('â„¹ï¸ Nenhum prompt para inserir (campo vazio)');
                 }
 
-                // ========== STEP 1: Upload Image via File Input ==========
-                console.log('📤 Step 1: Fazendo upload da imagem...');
-                console.log(`📊 Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
-
-                console.log('✅ Editor pronto, aguardando 1.5s antes do upload...');
-                await sleep(1500);
-
-                // Upload image using file input method (like autogrok does)
-                try {
-                    await uploadImageToGrok(imgData.data, currentImage.name);
-                    console.log('✅ Upload iniciado no input file');
-                } catch (uploadError) {
-                    console.error('❌ Erro no upload:', uploadError);
-                    throw uploadError;
-                }
-
-                // Wait for image to be processed and thumbnail to appear
-                updateOverlay({
-                    status: 'Aguardando processamento...',
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-
-                // Aguardar processamento da imagem (preview/thumbnail) - REDUZIDO
-                console.log('⏳ Aguardando 5s para processamento da imagem...');
-                await sleep(5000);
-
-                // Verificar se imagem apareceu (opcional - debug)
-                const hasImagePreview = document.querySelector('img[src^="blob:"]') ||
-                    document.querySelector('[data-testid="drop-ui"]') ||
-                    document.querySelector('.query-bar img');
-                console.log(hasImagePreview ? '✅ Preview de imagem detectado' : '⚠️ Preview de imagem não detectado, mas continuando...');
-
-                // ========== STEP 1.5: Select Aspect Ratio (Randomized or Fixed) ==========
+                // ========== STEP 1: Select Aspect Ratio (Randomized or Fixed) ==========
                 let currentRatio = automationState.settings?.fixedRatio || '3:2';
                 if (automationState.settings?.randomize && automationState.settings?.aspectRatios?.length > 0) {
                     currentRatio = automationState.settings.aspectRatios[Math.floor(Math.random() * automationState.settings.aspectRatios.length)];
-                    console.log(`🎲 [image-to-video] Item ${automationState.currentImageIndex + 1} -> Ratio: ${currentRatio}`);
+                    console.log(`ðŸŽ² [image-to-video] Item ${automationState.currentImageIndex + 1} -> Ratio: ${currentRatio}`);
                 }
 
                 updateOverlay({
-                    status: `Configurando Proporção [${currentRatio}]...`,
+                    status: `Configurando ProporÃ§Ã£o [${currentRatio}]...`,
                     prompt: `Imagem: ${currentImage.name}`,
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
 
                 await configureImageMode(currentRatio);
-                await sleep(1000); // 1s para o Grok atualizar os parâmetros internos
+                await sleep(1000); // 1s para o Grok atualizar os parÃ¢metros internos
 
-                // ========== STEP 2: Select Mode ==========
-                const genMode = automationState.settings?.generationMode || 'video';
-                console.log(`🎬 Step 2: Selecionando modo ${genMode}...`);
-                updateOverlay({
-                    status: `Selecionando modo ${genMode}...`,
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-
-                const modeSelected = await selectGenerationMode(genMode);
-                if (!modeSelected) {
-                    console.warn(`⚠️ Não conseguiu selecionar modo ${genMode}, tentando continuar...`);
-                }
-                await sleep(1000);
-
-                if (genMode === 'video') {
-                    // ========== STEP 3: Select Video Duration ==========
-                    if (automationState.settings?.videoDuration) {
-                        console.log(`⏱️ Step 3: Selecionando duração ${automationState.settings.videoDuration}...`);
-                        updateOverlay({
-                            status: `Configurando duração ${automationState.settings.videoDuration}...`,
-                            prompt: `Imagem: ${currentImage.name}`,
-                            index: automationState.currentImageIndex + 1,
-                            total: automationState.imageQueue.length
-                        });
-
-                        // Garantir que o menu esteja fechado antes de selecionar duração
-                        document.body.click();
-                        await sleep(500);
-
-                        const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
-                        console.log(`📊 Resultado seleção duração (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
-                        await sleep(1000);
-                    }
-
-                    // ========== STEP 3.5: Select Resolution ==========
-                    const resolution = automationState.settings?.resolution || '480p';
-                    console.log(`⏱️ Step 3.5: Selecionando resolução ${resolution}...`);
+                // ========== STEP 2: Video params (duraÃ§Ã£o + resoluÃ§Ã£o) ==========
+                // No fluxo image-to-video, o modo Ã© definido por "Anexar > Animar imagem".
+                // NÃ£o alternar "Modo de GeraÃ§Ã£o" aqui para evitar regressÃ£o para imagem.
+                const genMode = 'video';
+                if (automationState.settings?.videoDuration) {
+                    console.log(`â±ï¸ Step 3: Selecionando duraÃ§Ã£o ${automationState.settings.videoDuration}...`);
                     updateOverlay({
-                        status: `Configurando resolução ${resolution}...`,
+                        status: `Configurando duraÃ§Ã£o ${automationState.settings.videoDuration}...`,
                         prompt: `Imagem: ${currentImage.name}`,
                         index: automationState.currentImageIndex + 1,
                         total: automationState.imageQueue.length
                     });
-                    await selectResolution(resolution);
-                    await sleep(800);
+
+                    // Garantir que o menu esteja fechado antes de selecionar duraÃ§Ã£o
+                    closeOpenMenusSafely();
+                    await sleep(500);
+
+                    const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
+                    console.log(`ðŸ“Š Resultado seleÃ§Ã£o duraÃ§Ã£o (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
+                    await sleep(1000);
                 }
 
-                // ========== STEP 4: Submit ==========
-                console.log('🚀 Step 4: Enviando...');
+                // ========== STEP 3.5: Select Resolution ==========
+                const resolution = automationState.settings?.resolution || '480p';
+                console.log(`â±ï¸ Step 3.5: Selecionando resoluÃ§Ã£o ${resolution}...`);
                 updateOverlay({
-                    status: 'Enviando para geração...',
+                    status: `Configurando resoluÃ§Ã£o ${resolution}...`,
+                    prompt: `Imagem: ${currentImage.name}`,
+                    index: automationState.currentImageIndex + 1,
+                    total: automationState.imageQueue.length
+                });
+                await selectResolution(resolution);
+                await sleep(800);
+
+                // ========== STEP 3.8: Attach -> Animate Image -> Upload ==========
+                console.log('ðŸ“Ž Step 3.8: Abrindo Anexar > Animar imagem...');
+                const animateMenuOk = await openAttachAndChooseAnimateImage();
+                if (!animateMenuOk) {
+                    throw new Error('NÃ£o foi possÃ­vel abrir Anexar e selecionar Animar imagem.');
+                }
+
+                console.log('ðŸ“¤ Step 3.9: Fazendo upload da imagem...');
+                console.log(`ðŸ“Š Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
+                try {
+                    await uploadImageToGrok(imgData.data, currentImage.name);
+                    console.log('âœ… Upload iniciado no input file');
+                } catch (uploadError) {
+                    console.error('âŒ Erro no upload:', uploadError);
+                    throw uploadError;
+                }
+
+                updateOverlay({
+                    status: 'Aguardando processamento...',
+                    prompt: `Imagem: ${currentImage.name}`,
+                    index: automationState.currentImageIndex + 1,
+                    total: automationState.imageQueue.length
+                });
+                await sleep(2200);
+
+                // ========== STEP 4: Submit ==========
+                console.log('ðŸš€ Step 4: Enviando...');
+                updateOverlay({
+                    status: 'Enviando para geraÃ§Ã£o...',
                     prompt: `Imagem: ${currentImage.name}`,
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
@@ -2264,31 +2458,20 @@
 
                 const sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
 
-                // Try multiple submit button selectors
-                const submitSelectors = [
-                    'button[type="submit"]',
-                    'button[aria-label="Enviar"]',
-                    'button:has(svg.lucide-arrow-right)',
-                    'button:has(svg.stroke-\\[2\\])',
-                    'button[data-slot="button"]:has(svg)'
-                ];
-
                 let submitClicked = false;
-                for (const selector of submitSelectors) {
-                    const submitBtn = document.querySelector(selector);
-                    if (submitBtn && !submitBtn.disabled) {
-                        console.log(`✅ Botão Enviar encontrado (${selector}), clicando...`);
-                        forceClick(submitBtn);
-                        submitClicked = true;
-                        break;
-                    }
+                const submitBtn = findSubmitButton();
+                if (submitBtn && !submitBtn.disabled) {
+                    const label = submitBtn.getAttribute('aria-label') || '';
+                    console.log(`OK Botao Enviar encontrado (label="${label}"), clicando...`);
+                    safeSubmitClick(submitBtn);
+                    submitClicked = true;
                 }
 
                 if (!submitClicked) {
                     // Fallback: try Enter key on editor
                     const editor = findEditor();
                     if (editor) {
-                        console.log('⌨️ Tentando enviar com Enter no editor...');
+                        console.log('âŒ¨ï¸ Tentando enviar com Enter no editor...');
                         editor.focus();
                         editor.dispatchEvent(new KeyboardEvent('keydown', {
                             bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'
@@ -2297,7 +2480,7 @@
                 }
 
                 // ========== STEP 5: Wait for Generation ==========
-                console.log(`⏳ Step 5: Aguardando geração de ${genMode}...`);
+                console.log(`â³ Step 5: Aguardando geraÃ§Ã£o de ${genMode}...`);
                 updateOverlay({
                     status: `Gerando ${genMode}...`,
                     prompt: `Imagem: ${currentImage.name}`,
@@ -2306,43 +2489,62 @@
                 });
 
                 if (genMode === 'video') {
-                    await waitAndDownloadVideo(automationState.currentImageIndex, currentImage.name, sectionsBefore);
+                    const videoOk = await waitAndDownloadVideo(automationState.currentImageIndex, currentImage.name, sectionsBefore);
+                    if (!videoOk) {
+                        throw new Error('VÃ­deo nÃ£o finalizou dentro do tempo esperado.');
+                    }
                 } else {
                     const outputCount = automationState.settings?.downloadMultiCount || 4;
                     await waitAndDownloadImages(automationState.currentImageIndex, currentImage.name, outputCount, sectionsBefore);
                 }
 
                 // ========== STEP 6: Next Image ==========
-                console.log('⏭️ Avançando para próxima imagem...');
+                console.log('â­ï¸ AvanÃ§ando para prÃ³xima imagem...');
+                if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
+                automationState.imageToVideoRetries[automationState.currentImageIndex] = 0;
                 automationState.currentImageIndex++;
                 await saveAutomationState();
 
-                // Short pause before next prompt - delay reduzido para modo image-to-video
-                const waitDelay = Math.max(3, Math.min(automationState.delay, 10)); // Max 10s, min 3s
-                console.log(`⏱️ Aguardando ${waitDelay}s antes do próximo...`);
+                // Sempre voltar para /imagine entre itens (somente lÃ¡ existe o fluxo de upload)
+                const waitDelay = Math.max(3, Math.min(automationState.delay, 10));
+                console.log(`â±ï¸ Aguardando ${waitDelay}s e voltando para /imagine...`);
                 updateOverlay({
-                    status: 'Aguardando próximo...',
+                    status: 'Voltando para /imagine...',
                     prompt: `Delay: ${waitDelay}s...`,
                     index: automationState.currentImageIndex,
                     total: automationState.imageQueue.length
                 });
 
                 await sleep(waitDelay * 1000);
-
-                console.log('🔄 Continuando com a próxima imagem sem recarregar...');
-                // Chamar a função novamente para o próximo item sem reload
-                processImageToVideoQueue();
+                willNavigate = true;
+                window.location.href = 'https://grok.com/imagine';
                 return;
 
             } catch (error) {
-                console.error('❌ Erro:', error);
-                automationState.currentImageIndex++;
+                console.error('âŒ Erro:', error);
+                if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
+                const currentIdx = automationState.currentImageIndex;
+                const retries = (automationState.imageToVideoRetries[currentIdx] || 0) + 1;
+                automationState.imageToVideoRetries[currentIdx] = retries;
+
+                if (retries >= 3) {
+                    console.warn(`âš ï¸ Item ${currentIdx + 1} falhou ${retries}x. Pulando para o prÃ³ximo.`);
+                    automationState.imageToVideoRetries[currentIdx] = 0;
+                    automationState.currentImageIndex++;
+                } else {
+                    console.warn(`ðŸ” Repetindo item ${currentIdx + 1} (tentativa ${retries}/3)...`);
+                }
                 await saveAutomationState();
 
-                console.log('🔄 Ignorando erro e continuando em 5s...');
+                console.log('ðŸ”„ Erro no item atual. Voltando para /imagine em 5s...');
                 setTimeout(() => {
-                    processImageToVideoQueue();
+                    window.location.href = 'https://grok.com/imagine';
                 }, 5000);
+            }
+            } finally {
+                if (!willNavigate) {
+                    imageToVideoRunLock = false;
+                }
             }
         }
 
@@ -2354,7 +2556,7 @@
             }
 
             if (request.action === 'startAutomation') {
-                console.log('📨 Mensagem startAutomation recebida:', request);
+                console.log('ðŸ“¨ Mensagem startAutomation recebida:', request);
 
                 if (automationState.isRunning) {
                     sendResponse({ status: 'already_running' });
@@ -2364,11 +2566,11 @@
                 // Extract config from request
                 const config = request.config || request;
 
-                console.log('⚙️ Config extraído:', config);
+                console.log('âš™ï¸ Config extraÃ­do:', config);
 
                 // Validate prompts
                 if (!config.prompts || config.prompts.length === 0) {
-                    console.error('❌ Nenhum prompt fornecido!');
+                    console.error('âŒ Nenhum prompt fornecido!');
                     sendResponse({ status: 'error', message: 'Nenhum prompt fornecido' });
                     return true;
                 }
@@ -2394,7 +2596,7 @@
                 // Force disable upscale if resolution is 720p
                 if (automationState.settings.resolution === '720p') {
                     automationState.settings.upscale = false;
-                    console.log('ℹ️ Resolução 720p selecionada: Upscale desabilitado automaticamente.');
+                    console.log('â„¹ï¸ ResoluÃ§Ã£o 720p selecionada: Upscale desabilitado automaticamente.');
                 }
                 automationState.mode = config.mode || 'image';
                 automationState.modeApplied = false;
@@ -2406,11 +2608,12 @@
                 automationState.processedVideoUrls = new Set();
                 automationState.imageDownloadInitiated = false;
                 automationState.awaitingImageCompletion = false;
+                automationState.imageToVideoRetries = {};
                 automationState.promptsSinceLastBreak = 0;
                 automationState.isOnBreak = false;
                 automationState.breakEndTime = null;
 
-                console.log('🚀 Automação iniciada!', {
+                console.log('ðŸš€ AutomaÃ§Ã£o iniciada!', {
                     prompts: automationState.prompts.length,
                     promptsList: automationState.prompts,
                     mode: automationState.mode,
@@ -2426,7 +2629,7 @@
             }
 
             if (request.action === 'startImageToVideo') {
-                console.log('📨 Mensagem startImageToVideo recebida:', request);
+                console.log('ðŸ“¨ Mensagem startImageToVideo recebida:', request);
 
                 if (automationState.isRunning) {
                     sendResponse({ status: 'already_running' });
@@ -2435,19 +2638,19 @@
 
                 const config = request.config || request;
 
-                console.log('⚙️ Config Image-to-Video extraído:', config);
+                console.log('âš™ï¸ Config Image-to-Video extraÃ­do:', config);
 
                 // Load image queue from storage
                 chrome.storage.local.get(['automationQueue'], async (result) => {
                     const queue = result.automationQueue || [];
 
                     if (queue.length === 0) {
-                        console.error('❌ Fila de imagens vazia!');
+                        console.error('âŒ Fila de imagens vazia!');
                         sendResponse({ status: 'error', message: 'Nenhuma imagem na fila' });
                         return;
                     }
 
-                    console.log(`📸 ${queue.length} imagens na fila para processar`);
+                    console.log(`ðŸ“¸ ${queue.length} imagens na fila para processar`);
 
                     automationState.isRunning = true;
                     automationState.imageQueue = queue;
@@ -2465,13 +2668,13 @@
                         videoDuration: config.videoDuration || '6s',
                         resolution: config.resolution || '480p',
                         imagePrompt: config.imagePrompt || '', // Prompt para enviar com as imagens
-                        generationMode: config.mode || 'video'
+                        generationMode: 'video'
                     };
 
                     // Force disable upscale if resolution is 720p
                     if (automationState.settings.resolution === '720p') {
                         automationState.settings.upscale = false;
-                        console.log('ℹ️ Resolução 720p selecionada: Upscale desabilitado automaticamente.');
+                        console.log('â„¹ï¸ ResoluÃ§Ã£o 720p selecionada: Upscale desabilitado automaticamente.');
                     }
                     automationState.mode = 'image-to-video';
                     automationState.modeApplied = false;
@@ -2484,7 +2687,7 @@
                     automationState.isOnBreak = false;
                     automationState.breakEndTime = null;
 
-                    console.log('🚀 Automação Image-to-Video iniciada!', {
+                    console.log('ðŸš€ AutomaÃ§Ã£o Image-to-Video iniciada!', {
                         imageCount: queue.length,
                         mode: automationState.mode,
                         delay: automationState.delay,
@@ -2502,20 +2705,20 @@
 
             if (request.action === 'stopAutomation') {
                 resetAutomation();
-                sendMessageToBackground({ action: 'updateStatus', message: 'Automação interrompida', type: 'stopped' });
+                sendMessageToBackground({ action: 'updateStatus', message: 'AutomaÃ§Ã£o interrompida', type: 'stopped' });
                 sendResponse({ status: 'stopped' });
                 return true;
             }
 
             if (request.action === 'resetQueue') {
                 resetAutomation();
-                sendMessageToBackground({ action: 'updateStatus', message: 'Fila zerada e automação parada', type: 'stopped' });
+                sendMessageToBackground({ action: 'updateStatus', message: 'Fila zerada e automaÃ§Ã£o parada', type: 'stopped' });
                 sendResponse({ status: 'reset' });
                 return true;
             }
 
             if (request.action === 'clearState') {
-                console.log('🧹 Limpando estado de automação manualmente...');
+                console.log('ðŸ§¹ Limpando estado de automaÃ§Ã£o manualmente...');
                 resetAutomation();
                 clearAutomationState();
                 sendResponse({ status: 'cleared' });
@@ -2553,10 +2756,10 @@
             const shouldUpscale = automationState.settings?.upscale;
             const promptText = (automationState.prompts && automationState.prompts[currentPromptIndex]) || '';
 
-            console.log(`🔍 [processVideoElement] Índice: ${currentPromptIndex}, Upscale: ${shouldUpscale}, Modo: ${automationState.mode}`);
+            console.log(`ðŸ” [processVideoElement] Ãndice: ${currentPromptIndex}, Upscale: ${shouldUpscale}, Modo: ${automationState.mode}`);
 
             if (video.dataset.gpaVideoProcessed === 'true' || automationState.processingPrompts.has(currentPromptIndex) || automationState.downloadedVideos.has(currentPromptIndex)) {
-                console.log(`⏭️ [processVideoElement] Prompt ${currentPromptIndex} já está sendo processado ou baixado. Ignorando.`);
+                console.log(`â­ï¸ [processVideoElement] Prompt ${currentPromptIndex} jÃ¡ estÃ¡ sendo processado ou baixado. Ignorando.`);
                 return;
             }
 
@@ -2567,7 +2770,7 @@
             // Show status in overlay if upscaling
             if (shouldUpscale) {
                 updateOverlay({
-                    status: 'Upscale do vídeo...',
+                    status: 'Upscale do vÃ­deo...',
                     prompt: promptText.substring(0, 40) + '...',
                     index: currentPromptIndex + 1,
                     total: automationState.prompts.length
@@ -2586,17 +2789,17 @@
                         if (result.method === 'extension' && result.url) {
                             await triggerDownload(result.url, 'video', currentPromptIndex);
                         } else {
-                            console.log('⚠️ URL de upscale não acessível, usando src do vídeo.');
+                            console.log('âš ï¸ URL de upscale nÃ£o acessÃ­vel, usando src do vÃ­deo.');
                             await triggerDownload(video.src, 'video', currentPromptIndex);
                         }
                     } else {
-                        console.log('⚠️ Upscale falhou, baixando vídeo SD.');
+                        console.log('âš ï¸ Upscale falhou, baixando vÃ­deo SD.');
                         await triggerDownload(video.src, 'video', currentPromptIndex);
                     }
                 } else {
                     await sleep(2000); // Wait for UI stability
                     if (!automationState.downloadedVideos.has(currentPromptIndex)) {
-                        console.log('📥 Baixando vídeo SD via direct link.');
+                        console.log('ðŸ“¥ Baixando vÃ­deo SD via direct link.');
                         await triggerDownload(video.src, 'video', currentPromptIndex);
                     }
                 }
@@ -2607,20 +2810,20 @@
                     : (automationState.prompts?.length || 0);
 
                 if (currentPromptIndex >= totalPrompts - 1) {
-                    console.log('🏁 Processamento final concluído.');
+                    console.log('ðŸ Processamento final concluÃ­do.');
                 }
             } catch (error) {
-                console.error('❌ Erro no processVideoElement:', error);
+                console.error('âŒ Erro no processVideoElement:', error);
             } finally {
                 automationState.processingPrompts.delete(currentPromptIndex);
-                console.log(`🔓 Lock removido para prompt ${currentPromptIndex}.`);
+                console.log(`ðŸ”“ Lock removido para prompt ${currentPromptIndex}.`);
             }
         }
 
         // --- Helper to handle "Which video do you prefer?" popup ---
         function handlePreferencePopup() {
             // Look for the "Ignore" button in the specific popup structure
-            // Context: h3 "Qual vídeo..." -> p -> button "Ignorar"
+            // Context: h3 "Qual vÃ­deo..." -> p -> button "Ignorar"
             const buttons = Array.from(document.querySelectorAll('button'));
             const ignoreButton = buttons.find(btn => {
                 const text = normalizeText(btn.textContent);
@@ -2639,25 +2842,25 @@
             });
 
             if (ignoreButton) {
-                console.log('🛑 Popup "Qual vídeo você prefere" detectado. Clicando em Ignorar...');
+                console.log('ðŸ›‘ Popup "Qual vÃ­deo vocÃª prefere" detectado. Clicando em Ignorar...');
                 forceClick(ignoreButton);
                 return true;
             }
             return false;
         }
 
-        // Flag para evitar downloads duplicados simultâneos
+        // Flag para evitar downloads duplicados simultÃ¢neos
         let isDownloadingAllImages = false;
 
         const FINAL_IMAGE_SRC_MIN_LENGTH = 130000;
 
-        // Retorna a Última seção da masonry (mais recente) — igual ao .last() da extensão temp.
-        // O Grok cria uma nova seção por prompt: #imagine-masonry-section-0, -1, -2...
-        // Sempre usar a última para não pegar imagens antigas.
+        // Retorna a Ãšltima seÃ§Ã£o da masonry (mais recente) â€” igual ao .last() da extensÃ£o temp.
+        // O Grok cria uma nova seÃ§Ã£o por prompt: #imagine-masonry-section-0, -1, -2...
+        // Sempre usar a Ãºltima para nÃ£o pegar imagens antigas.
         function getMasonryRoot() {
             const sections = document.querySelectorAll('[id^="imagine-masonry-section"]');
             if (sections.length > 0) return sections[sections.length - 1]; // .last() da temp
-            // Fallback: procurar container de masonry genérico
+            // Fallback: procurar container de masonry genÃ©rico
             return document.querySelector('[data-testid="masonry"], .masonry-grid, #imagine-masonry-section-0') || document;
         }
 
@@ -2668,7 +2871,7 @@
                 item.dataset.gpaImageProcessed = 'true';
                 item.dataset.gpaAllImagesProcessed = 'true';
             });
-            console.log(`🧹 Itens antigos marcados como processados: ${items.length}`);
+            console.log(`ðŸ§¹ Itens antigos marcados como processados: ${items.length}`);
         }
 
         function getGeneratedImageFromListItem(item) {
@@ -2678,7 +2881,7 @@
             const candidates = Array.from(item.querySelectorAll('img[alt="Generated image"][src^="data:image/"]'));
             if (!candidates.length) return null;
 
-            // Escolher a maior imagem visível para evitar ícones/miniaturas
+            // Escolher a maior imagem visÃ­vel para evitar Ã­cones/miniaturas
             const best = candidates
                 .filter(img => isVisible(img))
                 .sort((a, b) => {
@@ -2716,9 +2919,9 @@
         }
 
         async function waitForCurrentImageFinalization(timeoutMs) {
-            // Mesma lógica da extensão de referência (temp):
+            // Mesma lÃ³gica da extensÃ£o de referÃªncia (temp):
             // Faz polling a cada 2s procurando imagens data:image com src.length >= 130000
-            // NÃO usa MutationObserver para src (que interferiria com a geração do Grok)
+            // NÃƒO usa MutationObserver para src (que interferiria com a geraÃ§Ã£o do Grok)
             const start = Date.now();
             let lastLogAt = 0;
             const maxImages = automationState.settings?.downloadAllImages
@@ -2730,7 +2933,7 @@
                 if (automationState.imageDownloadInitiated) return true;
 
                 // Buscar direto as imagens finalizadas na masonry (src data:image/jpeg = final)
-                // PNG = placeholder/borrado, JPEG = imagem concluída
+                // PNG = placeholder/borrado, JPEG = imagem concluÃ­da
                 const root = getMasonryRoot();
                 const allImgs = Array.from(root.querySelectorAll('img[alt="Generated image"]'));
                 const finalImgs = allImgs.filter(img => {
@@ -2740,41 +2943,41 @@
 
                 const now = Date.now();
                 if (now - lastLogAt >= 3000) {
-                    console.log(`⏳ Aguardando imagens JPEG: ${finalImgs.length}/${maxImages} finalizadas`);
+                    console.log(`â³ Aguardando imagens JPEG: ${finalImgs.length}/${maxImages} finalizadas`);
                     lastLogAt = now;
                 }
 
                 if (finalImgs.length >= maxImages) {
-                    console.log(`✅ ${finalImgs.length} imagem(ns) finalizada(s) detectada(s) via polling!`);
+                    console.log(`âœ… ${finalImgs.length} imagem(ns) finalizada(s) detectada(s) via polling!`);
                     return true;
                 }
 
-                await sleep(2000); // Polling a cada 2s, igual à extensão de referência
+                await sleep(2000); // Polling a cada 2s, igual Ã  extensÃ£o de referÃªncia
             }
 
             return false;
         }
 
-        // Função para baixar todas as imagens válidas de uma vez
+        // FunÃ§Ã£o para baixar todas as imagens vÃ¡lidas de uma vez
         async function downloadAllImagesFromItems() {
             if (!automationState.isRunning || !automationState.settings?.downloadAllImages) return;
             if (isDownloadingAllImages) {
-                console.log('⏳ Download de todas as imagens já em andamento, ignorando...');
+                console.log('â³ Download de todas as imagens jÃ¡ em andamento, ignorando...');
                 return;
             }
 
             isDownloadingAllImages = true;
 
             try {
-                // Obter o índice do prompt atual
-                // Usar lastPromptSentIndex se disponível, senão calcular baseado em currentIndex
+                // Obter o Ã­ndice do prompt atual
+                // Usar lastPromptSentIndex se disponÃ­vel, senÃ£o calcular baseado em currentIndex
                 const currentPromptIdx = automationState.lastPromptSentIndex >= 0
                     ? automationState.lastPromptSentIndex
                     : Math.max(0, automationState.currentIndex - 1);
                 const currentPrompt = automationState.prompts[currentPromptIdx];
 
                 if (!currentPrompt) {
-                    console.log('⚠️ Prompt atual não encontrado, cancelando download...');
+                    console.log('âš ï¸ Prompt atual nÃ£o encontrado, cancelando download...');
                     isDownloadingAllImages = false;
                     return;
                 }
@@ -2786,9 +2989,9 @@
                     return;
                 }
 
-                console.log(`🖼️ Modo 'Baixar Todas': Prompt[${currentPromptIdx}] "${currentPrompt.substring(0, 30)}..." - Verificando ${allItems.length} itens...`);
+                console.log(`ðŸ–¼ï¸ Modo 'Baixar Todas': Prompt[${currentPromptIdx}] "${currentPrompt.substring(0, 30)}..." - Verificando ${allItems.length} itens...`);
 
-                // Função para verificar se a imagem é válida
+                // FunÃ§Ã£o para verificar se a imagem Ã© vÃ¡lida
                 function checkImageValid(item) {
                     const image = getGeneratedImageFromListItem(item);
                     if (!image || !image.src) return null;
@@ -2813,16 +3016,16 @@
                     };
                 }
 
-                // Verificar se já atingimos o limite de downloads para este prompt
+                // Verificar se jÃ¡ atingimos o limite de downloads para este prompt
                 const maxImagesPerPrompt = automationState.settings?.downloadMultiCount || 4;
                 const alreadyDownloaded = automationState.imagesDownloadedCount || 0;
                 if (alreadyDownloaded >= maxImagesPerPrompt) {
-                    console.log(`✅ Limite de ${maxImagesPerPrompt} imagens já atingido para este prompt.`);
+                    console.log(`âœ… Limite de ${maxImagesPerPrompt} imagens jÃ¡ atingido para este prompt.`);
                     isDownloadingAllImages = false;
                     return;
                 }
 
-                console.log(`📊 Limite de imagens configurado: ${maxImagesPerPrompt}, já baixadas: ${alreadyDownloaded}`);
+                console.log(`ðŸ“Š Limite de imagens configurado: ${maxImagesPerPrompt}, jÃ¡ baixadas: ${alreadyDownloaded}`);
 
                 // Baixar apenas as imagens do prompt atual
                 let downloadedCount = alreadyDownloaded;
@@ -2838,20 +3041,20 @@
                         const imageNumber = downloadedCount + 1;
                         const promptName = currentPrompt;
 
-                        console.log(`⬇️ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
+                        console.log(`â¬‡ï¸ Baixando imagem ${imageNumber}: ${check.sizeKB.toFixed(1)}KB | Prompt[${currentPromptIdx}]: "${promptName.substring(0, 30)}..." [${imageNumber}/${maxImagesPerPrompt}]`);
                         await sleep(350);
 
-                        // Revalidar depois de alguns ms para evitar baixar placeholder em transição
+                        // Revalidar depois de alguns ms para evitar baixar placeholder em transiÃ§Ã£o
                         const recheck = checkImageValid(item);
                         if (!recheck || !recheck.valid || recheck.isPlaceholder) {
-                            console.log(`⏳ Item ${i}: ainda em transição após espera curta, pulando por agora...`);
+                            console.log(`â³ Item ${i}: ainda em transiÃ§Ã£o apÃ³s espera curta, pulando por agora...`);
                             continue;
                         }
                         item.dataset.gpaAllImagesProcessed = 'true';
                         automationState.imagesDownloadedCount = downloadedCount + 1;
 
-                        // Usar triggerDownload com sufixo para múltiplas imagens do mesmo prompt
-                        // Temporariamente modificar o prompt para incluir número da imagem
+                        // Usar triggerDownload com sufixo para mÃºltiplas imagens do mesmo prompt
+                        // Temporariamente modificar o prompt para incluir nÃºmero da imagem
                         const originalPrompt = automationState.prompts[currentPromptIdx];
                         automationState.prompts[currentPromptIdx] = `${originalPrompt}_${imageNumber}`;
                         await triggerDownload(check.src, 'image', currentPromptIdx);
@@ -2860,20 +3063,20 @@
 
                         downloadedCount++;
 
-                        // Pequeno delay entre downloads para não sobrecarregar
+                        // Pequeno delay entre downloads para nÃ£o sobrecarregar
                         await sleep(300);
                     } else if (check.isPlaceholder) {
-                        console.log(`⏳ Item ${i}: Placeholder PNG (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+                        console.log(`â³ Item ${i}: Placeholder PNG (${check.sizeKB.toFixed(1)}KB), aguardando...`);
                     } else {
-                        console.log(`⏳ Item ${i}: Imagem muito pequena (${check.sizeKB.toFixed(1)}KB), aguardando...`);
+                        console.log(`â³ Item ${i}: Imagem muito pequena (${check.sizeKB.toFixed(1)}KB), aguardando...`);
                     }
                 }
 
                 if (downloadedCount > 0) {
-                    console.log(`✅ ${downloadedCount} imagens baixadas no modo 'Todas' do prompt[${currentPromptIdx}]`);
+                    console.log(`âœ… ${downloadedCount} imagens baixadas no modo 'Todas' do prompt[${currentPromptIdx}]`);
                 }
                 if (downloadedCount >= maxImagesPerPrompt) {
-                    console.log(`✅ Todas as ${maxImagesPerPrompt} imagens do prompt atual baixadas.`);
+                    console.log(`âœ… Todas as ${maxImagesPerPrompt} imagens do prompt atual baixadas.`);
                 }
                 // Marcar que o download foi iniciado para este prompt
                 automationState.imageDownloadInitiated = true;
@@ -2885,9 +3088,9 @@
         function handleImageGeneration(mutations) {
             if (!automationState.isRunning) return;
 
-            // Observer agora só dispara para childList (sem attributes).
-            // Imagens: detecção via polling em waitForCurrentImageFinalization.
-            // Vídeos: detectados quando o elemento <video> é adicionado ao DOM.
+            // Observer agora sÃ³ dispara para childList (sem attributes).
+            // Imagens: detecÃ§Ã£o via polling em waitForCurrentImageFinalization.
+            // VÃ­deos: detectados quando o elemento <video> Ã© adicionado ao DOM.
             const hasAddedNodes = mutations.some(m => m.type === 'childList' && m.addedNodes.length > 0);
             if (!hasAddedNodes) return;
 
@@ -2897,11 +3100,11 @@
             // --- Modo Baixar Todas as Imagens ---
             if (automationState.mode === 'image' && automationState.settings?.downloadAllImages && automationState.settings?.autoDownload) {
                 downloadAllImagesFromItems();
-                return; // Não executar o modo de imagem única
+                return; // NÃ£o executar o modo de imagem Ãºnica
             }
 
-            // --- Image Mode (única imagem) ---
-            // Download agora tratado por polling direto em runAutomation após waitForCurrentImageFinalization.
+            // --- Image Mode (Ãºnica imagem) ---
+            // Download agora tratado por polling direto em runAutomation apÃ³s waitForCurrentImageFinalization.
 
 
             // --- Existing Video Logic (Video Mode) ---
@@ -2916,8 +3119,8 @@
                                 if (videoUrl && videoUrl.includes('generated_video.mp4') && !automationState.processedVideoUrls.has(videoUrl)) {
                                     automationState.processedVideoUrls.add(videoUrl); // Mark URL as processed immediately
                                     video.dataset.processedSrc = videoUrl;
-                                    console.log('🎬 Vídeo gerado detectado:', videoUrl);
-                                    // Calcular índice correto antes de chamar processVideoElement
+                                    console.log('ðŸŽ¬ VÃ­deo gerado detectado:', videoUrl);
+                                    // Calcular Ã­ndice correto antes de chamar processVideoElement
                                     const videoIndex = automationState.mode === 'image-to-video'
                                         ? automationState.currentImageIndex
                                         : Math.max(0, automationState.processedVideoUrls.size - 1);
@@ -2932,8 +3135,8 @@
                     if ((automationState.mode === 'video' || automationState.mode === 'image-to-video') && target.tagName === 'VIDEO' && videoUrl && videoUrl.includes('generated_video.mp4') && !automationState.processedVideoUrls.has(videoUrl)) {
                         automationState.processedVideoUrls.add(videoUrl); // Mark URL as processed immediately
                         target.dataset.processedSrc = videoUrl;
-                        console.log('🎬 Vídeo atualizado detectado:', videoUrl);
-                        // Calcular índice correto antes de chamar processVideoElement
+                        console.log('ðŸŽ¬ VÃ­deo atualizado detectado:', videoUrl);
+                        // Calcular Ã­ndice correto antes de chamar processVideoElement
                         const videoIndex = automationState.mode === 'image-to-video'
                             ? automationState.currentImageIndex
                             : Math.max(0, automationState.processedVideoUrls.size - 1);
@@ -2946,19 +3149,19 @@
 
         function initialize() {
             const observer = new MutationObserver(handleImageGeneration);
-            // Observar APENAS novos nós (childList) - NÃO observar atributos src.
-            // O Grok atualiza o src de imagens progressivamente durante a geração,
-            // o que causava milhares de callbacks no observer e interferia na geração.
-            // A detecção de imagem finalizada agora é feita por polling (waitForCurrentImageFinalization).
-            // Apenas vídeos precisam do observer (detectados por childList quando o <video> é adicionado ao DOM).
+            // Observar APENAS novos nÃ³s (childList) - NÃƒO observar atributos src.
+            // O Grok atualiza o src de imagens progressivamente durante a geraÃ§Ã£o,
+            // o que causava milhares de callbacks no observer e interferia na geraÃ§Ã£o.
+            // A detecÃ§Ã£o de imagem finalizada agora Ã© feita por polling (waitForCurrentImageFinalization).
+            // Apenas vÃ­deos precisam do observer (detectados por childList quando o <video> Ã© adicionado ao DOM).
             observer.observe(document.body, {
                 childList: true,
                 subtree: true
-                // SEM attributes: true - crucial para não interferir com geração de imagens
+                // SEM attributes: true - crucial para nÃ£o interferir com geraÃ§Ã£o de imagens
             });
             sendMessageToBackground({ action: 'contentScriptReady' });
             loadAutomationState();
-            console.log('🚀 Grok Prompt Automator carregado!');
+            console.log('ðŸš€ Grok Prompt Automator carregado!');
         }
 
         if (document.readyState === 'complete') {
@@ -2970,3 +3173,5 @@
         console.error('Fatal initialization error:', e);
     }
 })();
+
+
