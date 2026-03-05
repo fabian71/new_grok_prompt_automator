@@ -833,6 +833,31 @@
             return match ? `${match[1]}:${match[2]}` : '';
         }
 
+        function findAspectRatioTrigger() {
+            const candidates = findAllElements('button[aria-haspopup="menu"]')
+                .filter(btn => isVisible(btn) && !btn.disabled && !btn.closest('[role="menu"]'));
+
+            const scored = candidates
+                .map(btn => {
+                    const txt = normalizeText(btn.textContent || '');
+                    const aria = normalizeText(btn.getAttribute('aria-label') || '');
+                    const ratioFromText = normalizeAspectRatio(btn.textContent || '');
+                    let score = 0;
+
+                    if (ratioFromText) score += 8;
+                    if (aria.includes('ratio') || aria.includes('propor')) score += 5;
+                    if (btn.getAttribute('aria-expanded') !== null) score += 2;
+                    if ((btn.id || '').startsWith('radix-')) score += 1;
+                    if (txt.includes(':')) score += 1;
+
+                    return { btn, score };
+                })
+                .filter(item => item.score > 0)
+                .sort((a, b) => b.score - a.score);
+
+            return scored.length ? scored[0].btn : null;
+        }
+
         function findAspectRatioOption(targetRatio) {
             const normalizedTarget = normalizeAspectRatio(targetRatio);
             if (!normalizedTarget) return null;
@@ -842,16 +867,19 @@
             const directMatch = allButtons.find(btn => {
                 const aria = btn.getAttribute('aria-label') || '';
                 const text = btn.textContent || '';
-                return (normalizeAspectRatio(aria) === normalizedTarget || normalizeAspectRatio(text) === normalizedTarget) && isVisible(btn);
+                if (!isVisible(btn)) return false;
+                if (btn.closest('[role="menu"]')) return false;
+                if (btn.getAttribute('aria-haspopup') === 'menu') return false; // trigger, not option
+                return normalizeAspectRatio(aria) === normalizedTarget || normalizeAspectRatio(text) === normalizedTarget;
             });
             if (directMatch) return directMatch;
 
             // 2. Se nÃ£o achou direto, procurar em menus abertos
             const openMenus = findAllElements('[role="menu"][data-state="open"], [data-radix-menu-content][data-state="open"]');
             for (const menu of openMenus) {
-                const option = Array.from(menu.querySelectorAll('button')).find(btn => {
-                    const aria = btn.getAttribute('aria-label') || '';
-                    const text = btn.textContent || '';
+                const option = Array.from(menu.querySelectorAll('[role="menuitem"], button')).find(el => {
+                    const aria = el.getAttribute('aria-label') || '';
+                    const text = el.textContent || '';
                     return normalizeAspectRatio(aria) === normalizedTarget || normalizeAspectRatio(text) === normalizedTarget;
                 });
                 if (option) return option;
@@ -878,7 +906,15 @@
             const isPrimaryBtn = btnClasses.includes('text-primary') || btnClasses.includes('bg-primary');
 
             // No HTML que vocÃª enviou, o botÃ£o ativo tem text-primary e font-semibold
-            return (hasPrimaryText && hasFontSemibold) || hasPrimaryBg || isPrimaryBtn;
+            if ((hasPrimaryText && hasFontSemibold) || hasPrimaryBg || isPrimaryBtn) return true;
+
+            // Novo menu de proporcao usa role=menuitem com font-semibold no item selecionado
+            if (optionButton.getAttribute('role') === 'menuitem') {
+                if (btnClasses.includes('font-semibold') || optionButton.querySelector('.font-semibold')) return true;
+                if (optionButton.querySelector('.bg-primary, [class*="bg-primary"]')) return true;
+            }
+
+            return false;
         }
 
         function findOpenAspectMenuForTrigger(trigger) {
@@ -895,19 +931,66 @@
         }
 
         async function selectGenerationMode(mode) {
-            console.log(`ðŸŽ¯ [selectGenerationMode] Alvo: ${mode}`);
+            const targetMode = mode === 'video' ? 'video' : 'image';
+            console.log(`🎯 [selectGenerationMode] Alvo: ${targetMode}`);
 
-            // â”€â”€ 1. Encontrar o Trigger (BotÃ£o que abre o menu) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Novo layout: radiogroup direto na barra de prompt.
+            for (let attempt = 0; attempt < 8; attempt++) {
+                const groups = findAllElements('[role="radiogroup"]')
+                    .filter(g => {
+                        const text = normalizeText(g.textContent || '');
+                        const label = normalizeText(g.getAttribute('aria-label') || '');
+                        return (
+                            label.includes('modo') ||
+                            label.includes('generation mode') ||
+                            text.includes('imagem') ||
+                            text.includes('image')
+                        ) && (
+                            text.includes('video') ||
+                            text.includes('vídeo') ||
+                            text.includes('imagem') ||
+                            text.includes('image')
+                        );
+                    });
+
+                const modeGroup = groups[0];
+                if (modeGroup) {
+                    const radios = Array.from(modeGroup.querySelectorAll('button[role="radio"]'));
+                    const targetBtn = radios.find(btn => {
+                        const txt = normalizeText(btn.textContent || '');
+                        if (targetMode === 'video') return txt.includes('video') || txt.includes('vídeo');
+                        return txt.includes('image') || txt.includes('imagem');
+                    });
+
+                    if (targetBtn) {
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Modo ${targetMode} já estava selecionado.`);
+                            return true;
+                        }
+
+                        forceClick(targetBtn);
+                        await sleep(450);
+
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Modo ${targetMode} selecionado no radiogroup.`);
+                            return true;
+                        }
+                    }
+                }
+
+                await sleep(300);
+            }
+
+            // Fallback legado: menu dropdown (UI antiga).
             let trigger = null;
             for (let i = 0; i < 15; i++) {
-                // EstratÃ©gia multi-idioma e multi-page (Imagine vs Chat)
                 const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'));
                 trigger = menus.find(b => {
                     const label = (b.getAttribute('aria-label') || '').toLowerCase();
                     const text = (b.textContent || '').toLowerCase();
                     return label.includes('config') || label.includes('sett') ||
-                        label.includes('seleÃ§Ã£o') || label.includes('selection') ||
-                        text.includes('imagem') || text.includes('vÃ­deo') ||
+                        label.includes('seleção') || label.includes('selection') ||
+                        text.includes('imagem') || text.includes('vídeo') ||
                         text.includes('image') || text.includes('video');
                 });
                 if (trigger) break;
@@ -915,76 +998,53 @@
             }
 
             if (!trigger) {
-                console.warn('âš ï¸ Trigger de modo nÃ£o encontrado. Tentando prosseguir...');
+                console.warn('⚠️ Trigger de modo não encontrado.');
                 return false;
             }
 
-            // â”€â”€ 2. Tentar abrir o menu e selecionar o item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             for (let attempt = 0; attempt < 3; attempt++) {
                 if (trigger.getAttribute('aria-expanded') !== 'true') {
                     forceClick(trigger);
                     await sleep(800);
                 }
 
-                // Detectar o container do menu
                 const modeGroup = Array.from(document.querySelectorAll('[role="group"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]'))
                     .find(el => el.querySelectorAll('[role="menuitemradio"]').length >= 2);
 
                 if (!modeGroup) {
-                    console.warn(`â³ Menu de modo nÃ£o detectado (t- ${attempt + 1}/3).`);
-                    forceClick(trigger); // Tentar clicar novamente para forÃ§ar abertura
+                    forceClick(trigger);
                     await sleep(1000);
                     continue;
                 }
 
                 const items = Array.from(modeGroup.querySelectorAll('[role="menuitemradio"]'));
-                console.log(`ðŸ“‹ Encontrados ${items.length} itens no menu de modo.`);
-
                 let targetBtn = null;
-                if (mode === 'video') {
+                if (targetMode === 'video') {
                     targetBtn = items.find(el => {
                         const text = normalizeText(el.textContent || '');
-                        return text.includes('video') || text.includes('vÃ­deo');
-                    }) ||
-                    // Prioridade: SVG Path de vÃ­deo (CÃ¢mera)
-                    items.find(el => {
-                        const d = Array.from(el.querySelectorAll('path')).map(p => p.getAttribute('d') || '').join(' ');
-                        return d.includes('M22.5 19') || d.includes('M18.375') || d.includes('M16.5 8.5V15.5');
-                    }) || items[1]; // Fallback: index 1 Ã© vÃ­deo
+                        return text.includes('video') || text.includes('vídeo');
+                    }) || items[1];
                 } else {
-                    // Prioridade: SVG Path de imagem (Paisagem)
                     targetBtn = items.find(el => {
-                        const d = Array.from(el.querySelectorAll('path')).map(p => p.getAttribute('d') || '').join(' ');
-                        return d.includes('M14.0996') || d.includes('M4.50586') || d.includes('M15 7C13');
-                    }) || items[0]; // Fallback: index 0 Ã© imagem
+                        const text = normalizeText(el.textContent || '');
+                        return text.includes('image') || text.includes('imagem');
+                    }) || items[0];
                 }
 
                 if (targetBtn) {
                     const isSelected = targetBtn.getAttribute('aria-checked') === 'true';
                     if (!isSelected) {
-                        console.log(`âœ… Aplicando modo: ${mode}`);
                         forceClick(targetBtn);
                         await sleep(600);
                     }
-
-                    // VerificaÃ§Ã£o final no texto do trigger apÃ³s seleÃ§Ã£o
-                    const triggerText = normalizeText(trigger.textContent || '');
-                    const isVideoNow = /video|v[iÃ­]deo/.test(triggerText);
-                    const isImageNow = /image|imagen|imagem/.test(triggerText);
-                    if ((mode === 'video' && !isVideoNow) || (mode === 'image' && !isImageNow)) {
-                        console.warn(`âš ï¸ Modo nÃ£o confirmado apÃ³s clique (trigger="${triggerText}"), tentando novamente...`);
-                        await sleep(400);
-                        continue;
-                    }
-
-                    document.body.click(); // Fechar menu
+                    closeOpenMenusSafely();
                     await sleep(300);
                     return true;
                 }
             }
 
-            console.warn('âš ï¸ NÃ£o foi possÃ­vel garantir a seleÃ§Ã£o do modo.');
-            document.body.click();
+            console.warn('⚠️ Não foi possível garantir a seleção do modo.');
+            closeOpenMenusSafely();
             return false;
         }
 
@@ -1010,7 +1070,7 @@
 
             // 2. Se falhou direto, tentar via menu de opÃ§Ãµes do modelo
             for (let i = 0; i < 3; i++) {
-                const trigger = findModelOptionsTrigger();
+                const trigger = findAspectRatioTrigger() || findModelOptionsTrigger();
                 if (!trigger) {
                     await sleep(300);
                     continue;
@@ -1024,21 +1084,21 @@
                 const menu = findOpenAspectMenuForTrigger(trigger);
                 if (!menu) continue;
 
-                const option = Array.from(menu.querySelectorAll('button')).find(btn => {
-                    const aria = btn.getAttribute('aria-label') || '';
-                    const text = btn.textContent || '';
+                const option = Array.from(menu.querySelectorAll('[role="menuitem"], button')).find(el => {
+                    const aria = el.getAttribute('aria-label') || '';
+                    const text = el.textContent || '';
                     return normalizeAspectRatio(aria) === target || normalizeAspectRatio(text) === target;
                 });
 
                 if (option) {
                     if (isAspectRatioSelected(option)) {
                         console.log(`âœ… [Menu] ProporÃ§Ã£o ${target} jÃ¡ selecionada.`);
-                        document.body.click();
+                        closeOpenMenusSafely();
                         return true;
                     }
                     forceClick(option);
                     await sleep(500);
-                    document.body.click();
+                    closeOpenMenusSafely();
                     return true;
                 }
             }
@@ -1881,7 +1941,12 @@
                     const delayMs = Math.max(2, delaySeconds) * 1000;
                     console.log(`â±ï¸ Aguardando ${delayMs / 1000}s para o prÃ³ximo prompt...`);
                     await sleep(delayMs);
-                    automationState.timeoutId = setTimeout(runAutomation, 100);
+
+                    // Garantir ambiente limpo entre prompts: recarregar sempre em /imagine.
+                    await saveAutomationState();
+                    console.log('ðŸ”„ Voltando para /imagine para o prÃ³ximo prompt...');
+                    window.location.href = 'https://grok.com/imagine';
+                    return;
                 } else {
                     handleAutomationComplete();
                 }
@@ -2120,7 +2185,41 @@
 
             const possibleValues = durationMap[targetDuration] || [targetDuration];
 
-            console.log(`ðŸŽ¯ Selecionando duraÃ§Ã£o: ${targetDuration}`);
+            console.log(`🎯 Selecionando duração: ${targetDuration}`);
+
+            // Novo layout: radiogroup direto (ex.: +6s / +10s).
+            const targetSeconds = String(targetDuration || '').replace(/[^\d]/g, '');
+            for (let i = 0; i < 6; i++) {
+                const durationGroup = findAllElements('[role="radiogroup"]')
+                    .find(g => {
+                        const label = normalizeText(g.getAttribute('aria-label') || '');
+                        const text = normalizeText(g.textContent || '');
+                        return label.includes('duracao') || label.includes('duration') || /[\+\s]?\d+s/.test(text);
+                    });
+
+                if (durationGroup) {
+                    const buttons = Array.from(durationGroup.querySelectorAll('button[role="radio"], button'));
+                    const targetBtn = buttons.find(btn => {
+                        const txt = normalizeText(btn.textContent || '');
+                        const digits = txt.replace(/[^\d]/g, '');
+                        return digits && digits === targetSeconds;
+                    });
+
+                    if (targetBtn) {
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Duração ${targetDuration} já estava selecionada.`);
+                            return true;
+                        }
+                        forceClick(targetBtn);
+                        await sleep(450);
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Duração ${targetDuration} selecionada no radiogroup.`);
+                            return true;
+                        }
+                    }
+                }
+                await sleep(250);
+            }
 
             // Abrir o menu de configurações do modelo
             let trigger = null;
@@ -2232,7 +2331,37 @@
         // Helper: Select Resolution
         async function selectResolution(targetResolution) {
             const target = targetResolution || '480p'; // default 480p
-            console.log(`ðŸŽ¯ Selecionando resoluÃ§Ã£o: ${target}`);
+            console.log(`🎯 Selecionando resolução: ${target}`);
+
+            // Novo layout: radiogroup direto na barra (480p/720p).
+            for (let i = 0; i < 6; i++) {
+                const resolutionGroup = findAllElements('[role="radiogroup"]')
+                    .find(g => {
+                        const label = normalizeText(g.getAttribute('aria-label') || '');
+                        const text = normalizeText(g.textContent || '');
+                        return label.includes('resolucao') || label.includes('resolution') || text.includes('480p') || text.includes('720p');
+                    });
+
+                if (resolutionGroup) {
+                    const buttons = Array.from(resolutionGroup.querySelectorAll('button[role="radio"], button'));
+                    const targetBtn = buttons.find(btn => normalizeText(btn.textContent || '') === normalizeText(target));
+
+                    if (targetBtn) {
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Resolução ${target} já estava selecionada.`);
+                            return true;
+                        }
+
+                        forceClick(targetBtn);
+                        await sleep(450);
+                        if (targetBtn.getAttribute('aria-checked') === 'true') {
+                            console.log(`✅ Resolução ${target} selecionada no radiogroup.`);
+                            return true;
+                        }
+                    }
+                }
+                await sleep(250);
+            }
 
             // Find resolution buttons
             // They are usually visible directly on the UI or inside a menu? 
