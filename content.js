@@ -30,11 +30,11 @@
             upscaledPrompts: new Set(),
             processingPrompts: new Set(),
             downloadedVideos: new Set(),
-        processedVideoUrls: new Set(),
-        imageDownloadInitiated: false,
-        awaitingImageCompletion: false,
-        imageToVideoRetries: {},
-        imagesDownloadedCount: 0,
+            processedVideoUrls: new Set(),
+            imageDownloadInitiated: false,
+            awaitingImageCompletion: false,
+            imageToVideoRetries: {},
+            imagesDownloadedCount: 0,
             lastPromptSentIndex: -1,
             restoredFromReload: false,
             promptsSinceLastBreak: 0,
@@ -131,7 +131,7 @@
                     const hasImageQueue = saved.imageQueue && saved.imageQueue.length > 0;
 
                     if (!hasPrompts && !hasImageQueue) {
-                        console.log('âš ï¸ Estado restaurado nÃ£o tem prompts nem imageQueue. Limpando...');
+                        console.log('⚠️ Estado restaurado não tem prompts nem imageQueue. Limpando...');
                         await clearAutomationState();
                         return;
                     }
@@ -157,10 +157,12 @@
                         processedVideoUrls: new Set(saved.processedVideoUrls || []),
                         timeoutId: null,
                         restoredFromReload: true,
-                        modeApplied: false // Force re-check of mode on new page
+                        modeApplied: false, // Force re-check of mode on new page
+                        // Garantir que currentImageIndex nunca seja undefined
+                        currentImageIndex: saved.currentImageIndex != null ? saved.currentImageIndex : 0
                     };
 
-                    console.log('â™»ï¸ Estado da automaÃ§Ã£o restaurado apÃ³s reload.', {
+                    console.log('♻️ Estado da automação restaurado após reload.', {
                         mode: automationState.mode,
                         prompts: automationState.prompts?.length || 0,
                         imageQueue: automationState.imageQueue?.length || 0,
@@ -174,27 +176,27 @@
                         : automationState.currentIndex >= automationState.prompts.length;
 
                     if (isComplete) {
-                        console.log('âœ… Estado restaurado indica conclusÃ£o. Finalizando...');
+                        console.log('✅ Estado restaurado indica conclusão. Finalizando...');
                         handleAutomationComplete();
                         return;
                     }
 
                     // Resume logic
                     if (automationState.isRunning) {
-                        console.log('ðŸ”„ Retomando automaÃ§Ã£o apÃ³s reload...');
+                        console.log('🔄 Retomando automação após reload...');
                         startOverlayTimer(); // Start timer immediately for restored state
 
                         if (automationState.mode === 'image-to-video') {
                             // Resume Image-to-Video
                             if (automationState.imageQueue && automationState.currentImageIndex < automationState.imageQueue.length) {
-                                console.log(`ðŸŽ¬ Retomando Image-to-Video: imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}`);
-                                console.log('â³ Aguardando 3s para pÃ¡gina estabilizar...');
+                                console.log(`🎬 Retomando Image-to-Video: imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}`);
+                                console.log('⏳ Aguardando 3s para página estabilizar...');
                                 setTimeout(() => {
                                     runImageToVideoAutomation();
                                 }, 3000);
                             } else {
                                 // If imageQueue is exhausted or invalid, treat as complete
-                                console.log('âœ… Image-to-Video queue concluÃ­da ou invÃ¡lida. Finalizando...');
+                                console.log('✅ Image-to-Video queue concluída ou inválida. Finalizando...');
                                 handleAutomationComplete();
                             }
                         } else {
@@ -946,11 +948,11 @@
                             text.includes('imagem') ||
                             text.includes('image')
                         ) && (
-                            text.includes('video') ||
-                            text.includes('vídeo') ||
-                            text.includes('imagem') ||
-                            text.includes('image')
-                        );
+                                text.includes('video') ||
+                                text.includes('vídeo') ||
+                                text.includes('imagem') ||
+                                text.includes('image')
+                            );
                     });
 
                 const modeGroup = groups[0];
@@ -1092,25 +1094,39 @@
 
                 if (option) {
                     if (isAspectRatioSelected(option)) {
-                        console.log(`âœ… [Menu] ProporÃ§Ã£o ${target} jÃ¡ selecionada.`);
+                        console.log(`✅ [Menu] Proporção ${target} já selecionada.`);
                         closeOpenMenusSafely();
                         return true;
                     }
                     forceClick(option);
-                    await sleep(500);
+                    await sleep(600);
+                    // Verificar se realmente foi selecionada após o clique
+                    if (isAspectRatioSelected(option)) {
+                        console.log(`✅ [Menu] Proporção ${target} selecionada com sucesso.`);
+                        closeOpenMenusSafely();
+                        return true;
+                    }
+                    console.warn(`⚠️ [Menu] Clique na proporção ${target} pode não ter funcionado. Tentando via seleção direta...`);
                     closeOpenMenusSafely();
+                    await sleep(400);
+                    // Tentativa extra: selecionar diretamente fora do menu
+                    const directRetry = findAspectRatioOption(target);
+                    if (directRetry && isVisible(directRetry) && !isAspectRatioSelected(directRetry)) {
+                        forceClick(directRetry);
+                        await sleep(500);
+                        console.log(`✅ [Direto retry] Proporção ${target} aplicada.`);
+                    }
                     return true;
                 }
             }
 
-            console.warn(`âŒ NÃ£o foi possÃ­vel encontrar opÃ§Ã£o para proporÃ§Ã£o: ${target}`);
+            console.warn(`❌ Não foi possível encontrar opção para proporção: ${target}`);
             return false;
         }
 
         // --- Download Helper ---
         const triggerDownload = async (url, type, promptIndex = null) => {
             if (!url) return;
-
             // Determine correct index based on mode
             let actualIndex;
             if (promptIndex !== null && promptIndex >= 0) {
@@ -1488,6 +1504,11 @@
         // FLUXO DE IMAGEM â€” espelho exato da extensÃ£o de referÃªncia (pasta temp)
         // =========================================================================
 
+        // Tamanho mínimo do src de uma imagem JPEG base64 finalizada.
+        // Uma imagem final do Grok tem geralmente >130KB de dados base64.
+        // Declarada aqui (antes das funções) pois const não tem hoisting.
+        const FINAL_IMAGE_SRC_MIN_LENGTH = 130000;
+
         /**
          * PASSO 1 â€” Configurar proporÃ§Ã£o da imagem.
          * NOTA: JÃ¡ estamos na pÃ¡gina /imagine (modo imagem).
@@ -1633,15 +1654,27 @@
                 const allImgs = Array.from(root.querySelectorAll('img[alt="Generated image"]'));
                 const finalImgs = allImgs.filter(img => {
                     const src = img.src || '';
-                    // PNG = placeholder (gerado durante a geraÃ§Ã£o)
-                    // JPEG = imagem final (concluÃ­da)
-                    return src.startsWith('data:image/jpeg') && src.length >= FINAL_IMAGE_SRC_MIN_LENGTH;
+                    if (!src || src.length < 10) return false;
+
+                    // Imagem base64 JPEG final (formato antigo do Grok)
+                    if (src.startsWith('data:image/jpeg') && src.length >= FINAL_IMAGE_SRC_MIN_LENGTH) return true;
+
+                    // Imagem via URL HTTP/HTTPS (formato atual do Grok - serve via CDN)
+                    // Aceitar qualquer src que seja URL externa e nÃ£o seja PNG placeholder
+                    if ((src.startsWith('http://') || src.startsWith('https://')) && !src.startsWith('data:image/png')) return true;
+
+                    // Blob URL (tambÃ©m pode ser a imagem final)
+                    if (src.startsWith('blob:')) return true;
+
+                    return false;
                 });
 
                 if (iteration % 5 === 0) {
                     const pngs = allImgs.filter(i => (i.src || '').startsWith('data:image/png')).length;
                     const jpegs = allImgs.filter(i => (i.src || '').startsWith('data:image/jpeg')).length;
-                    console.log(`â³ [img poll] iter=${iteration} root=${root.id || 'doc'} png=${pngs} jpeg=${jpegs} finais=${finalImgs.length}/${outputCount}`);
+                    const httpImgs = allImgs.filter(i => (i.src || '').startsWith('http')).length;
+                    const blobs = allImgs.filter(i => (i.src || '').startsWith('blob:')).length;
+                    console.log(`⏳ [img poll] iter=${iteration} root=${root.id || 'doc'} png=${pngs} jpeg=${jpegs} http=${httpImgs} blob=${blobs} finais=${finalImgs.length}/${outputCount}`);
                 }
 
                 // Quando atingir o nÃºmero esperado E a primeira tiver src â€” baixar tudo
@@ -2433,8 +2466,8 @@
                     return;
                 }
 
-            // Check if we're on a post page - redirect to /imagine if so (post pages have no editor)
-            const isPostPage = window.location.pathname.includes('/imagine/post/');
+                // Check if we're on a post page - redirect to /imagine if so (post pages have no editor)
+                const isPostPage = window.location.pathname.includes('/imagine/post/');
 
                 if (isPostPage) {
                     console.log(`RETRY [image-to-video] Redirecionando para /imagine pois pagina de post nao tem editor`);
@@ -2444,232 +2477,232 @@
                     return;
                 }
 
-            // Sync global index for observers
-            automationState.currentIndex = automationState.currentImageIndex;
+                // Sync global index for observers
+                automationState.currentIndex = automationState.currentImageIndex;
 
-            const currentImage = automationState.imageQueue[automationState.currentImageIndex];
-            console.log(`ðŸ“¸ Processando imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}: ${currentImage.name}`);
-
-            updateOverlay({
-                status: 'Preparando upload...',
-                prompt: `Imagem: ${currentImage.name}`,
-                index: automationState.currentImageIndex + 1,
-                total: automationState.imageQueue.length
-            });
-
-            try {
-                // Get image data from storage
-                const storedImage = await chrome.storage.local.get(currentImage.id);
-                if (!storedImage || !storedImage[currentImage.id]) {
-                    throw new Error(`Imagem ${currentImage.id} nÃ£o encontrada no storage`);
-                }
-
-                const imgData = storedImage[currentImage.id];
-
-                // ========== STEP 0: Insert Prompt Text (if provided) - BEFORE upload ==========
-                const imagePrompt = automationState.settings?.imagePrompt;
-
-                // Wait for UI to be ready - look for the contenteditable editor
-                let editor = findEditor();
-                let attempts = 0;
-                while (!editor && attempts < 10) {
-                    console.log(`â³ Aguardando editor... tentativa ${attempts + 1}/10`);
-                    await sleep(800);
-                    editor = findEditor();
-                    attempts++;
-                }
-
-                if (!editor) {
-                    throw new Error('Editor nÃ£o encontrado na pÃ¡gina apÃ³s 10 tentativas');
-                }
-
-                // Insert prompt text BEFORE uploading image
-                if (imagePrompt && imagePrompt.trim()) {
-                    console.log(`ðŸ“ Step 0: Inserindo prompt no editor antes do upload...`);
-                    updateOverlay({
-                        status: 'Inserindo prompt...',
-                        prompt: imagePrompt,
-                        index: automationState.currentImageIndex + 1,
-                        total: automationState.imageQueue.length
-                    });
-
-                    simulateTyping(editor, imagePrompt);
-                    console.log('âœ… Prompt inserido no editor');
-                    await sleep(800);
-                } else {
-                    console.log('â„¹ï¸ Nenhum prompt para inserir (campo vazio)');
-                }
-
-                // ========== STEP 1: Select Aspect Ratio (Randomized or Fixed) ==========
-                let currentRatio = automationState.settings?.fixedRatio || '3:2';
-                if (automationState.settings?.randomize && automationState.settings?.aspectRatios?.length > 0) {
-                    currentRatio = automationState.settings.aspectRatios[Math.floor(Math.random() * automationState.settings.aspectRatios.length)];
-                    console.log(`ðŸŽ² [image-to-video] Item ${automationState.currentImageIndex + 1} -> Ratio: ${currentRatio}`);
-                }
+                const currentImage = automationState.imageQueue[automationState.currentImageIndex];
+                console.log(`ðŸ“¸ Processando imagem ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length}: ${currentImage.name}`);
 
                 updateOverlay({
-                    status: `Configurando ProporÃ§Ã£o [${currentRatio}]...`,
+                    status: 'Preparando upload...',
                     prompt: `Imagem: ${currentImage.name}`,
                     index: automationState.currentImageIndex + 1,
                     total: automationState.imageQueue.length
                 });
 
-                await configureImageMode(currentRatio);
-                await sleep(1000); // 1s para o Grok atualizar os parÃ¢metros internos
+                try {
+                    // Get image data from storage
+                    const storedImage = await chrome.storage.local.get(currentImage.id);
+                    if (!storedImage || !storedImage[currentImage.id]) {
+                        throw new Error(`Imagem ${currentImage.id} nÃ£o encontrada no storage`);
+                    }
 
-                // ========== STEP 2: Video params (duraÃ§Ã£o + resoluÃ§Ã£o) ==========
-                // No fluxo image-to-video, o modo Ã© definido por "Anexar > Animar imagem".
-                // NÃ£o alternar "Modo de GeraÃ§Ã£o" aqui para evitar regressÃ£o para imagem.
-                const genMode = 'video';
-                if (automationState.settings?.videoDuration) {
-                    console.log(`â±ï¸ Step 3: Selecionando duraÃ§Ã£o ${automationState.settings.videoDuration}...`);
+                    const imgData = storedImage[currentImage.id];
+
+                    // ========== STEP 0: Insert Prompt Text (if provided) - BEFORE upload ==========
+                    const imagePrompt = automationState.settings?.imagePrompt;
+
+                    // Wait for UI to be ready - look for the contenteditable editor
+                    let editor = findEditor();
+                    let attempts = 0;
+                    while (!editor && attempts < 10) {
+                        console.log(`â³ Aguardando editor... tentativa ${attempts + 1}/10`);
+                        await sleep(800);
+                        editor = findEditor();
+                        attempts++;
+                    }
+
+                    if (!editor) {
+                        throw new Error('Editor nÃ£o encontrado na pÃ¡gina apÃ³s 10 tentativas');
+                    }
+
+                    // Insert prompt text BEFORE uploading image
+                    if (imagePrompt && imagePrompt.trim()) {
+                        console.log(`ðŸ“ Step 0: Inserindo prompt no editor antes do upload...`);
+                        updateOverlay({
+                            status: 'Inserindo prompt...',
+                            prompt: imagePrompt,
+                            index: automationState.currentImageIndex + 1,
+                            total: automationState.imageQueue.length
+                        });
+
+                        simulateTyping(editor, imagePrompt);
+                        console.log('âœ… Prompt inserido no editor');
+                        await sleep(800);
+                    } else {
+                        console.log('â„¹ï¸ Nenhum prompt para inserir (campo vazio)');
+                    }
+
+                    // ========== STEP 1: Select Aspect Ratio (Randomized or Fixed) ==========
+                    let currentRatio = automationState.settings?.fixedRatio || '3:2';
+                    if (automationState.settings?.randomize && automationState.settings?.aspectRatios?.length > 0) {
+                        currentRatio = automationState.settings.aspectRatios[Math.floor(Math.random() * automationState.settings.aspectRatios.length)];
+                        console.log(`ðŸŽ² [image-to-video] Item ${automationState.currentImageIndex + 1} -> Ratio: ${currentRatio}`);
+                    }
+
                     updateOverlay({
-                        status: `Configurando duraÃ§Ã£o ${automationState.settings.videoDuration}...`,
+                        status: `Configurando ProporÃ§Ã£o [${currentRatio}]...`,
                         prompt: `Imagem: ${currentImage.name}`,
                         index: automationState.currentImageIndex + 1,
                         total: automationState.imageQueue.length
                     });
 
-                    // Garantir que o menu esteja fechado antes de selecionar duraÃ§Ã£o
-                    closeOpenMenusSafely();
-                    await sleep(500);
+                    await configureImageMode(currentRatio);
+                    await sleep(1000); // 1s para o Grok atualizar os parÃ¢metros internos
 
-                    const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
-                    console.log(`ðŸ“Š Resultado seleÃ§Ã£o duraÃ§Ã£o (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
-                    await sleep(1000);
-                }
+                    // ========== STEP 2: Video params (duraÃ§Ã£o + resoluÃ§Ã£o) ==========
+                    // No fluxo image-to-video, o modo Ã© definido por "Anexar > Animar imagem".
+                    // NÃ£o alternar "Modo de GeraÃ§Ã£o" aqui para evitar regressÃ£o para imagem.
+                    const genMode = 'video';
+                    if (automationState.settings?.videoDuration) {
+                        console.log(`â±ï¸ Step 3: Selecionando duraÃ§Ã£o ${automationState.settings.videoDuration}...`);
+                        updateOverlay({
+                            status: `Configurando duraÃ§Ã£o ${automationState.settings.videoDuration}...`,
+                            prompt: `Imagem: ${currentImage.name}`,
+                            index: automationState.currentImageIndex + 1,
+                            total: automationState.imageQueue.length
+                        });
 
-                // ========== STEP 3.5: Select Resolution ==========
-                const resolution = automationState.settings?.resolution || '480p';
-                console.log(`â±ï¸ Step 3.5: Selecionando resoluÃ§Ã£o ${resolution}...`);
-                updateOverlay({
-                    status: `Configurando resoluÃ§Ã£o ${resolution}...`,
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-                await selectResolution(resolution);
-                await sleep(800);
+                        // Garantir que o menu esteja fechado antes de selecionar duraÃ§Ã£o
+                        closeOpenMenusSafely();
+                        await sleep(500);
 
-                // ========== STEP 3.8: Attach -> Animate Image -> Upload ==========
-                console.log('ðŸ“Ž Step 3.8: Abrindo Anexar > Animar imagem...');
-                const animateMenuOk = await openAttachAndChooseAnimateImage();
-                if (!animateMenuOk) {
-                    throw new Error('NÃ£o foi possÃ­vel abrir Anexar e selecionar Animar imagem.');
-                }
-
-                console.log('ðŸ“¤ Step 3.9: Fazendo upload da imagem...');
-                console.log(`ðŸ“Š Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
-                try {
-                    await uploadImageToGrok(imgData.data, currentImage.name);
-                    console.log('âœ… Upload iniciado no input file');
-                } catch (uploadError) {
-                    console.error('âŒ Erro no upload:', uploadError);
-                    throw uploadError;
-                }
-
-                updateOverlay({
-                    status: 'Aguardando processamento...',
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-                await sleep(2200);
-
-                // ========== STEP 4: Submit ==========
-                console.log('ðŸš€ Step 4: Enviando...');
-                updateOverlay({
-                    status: 'Enviando para geraÃ§Ã£o...',
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
-
-                const sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
-
-                let submitClicked = false;
-                const submitBtn = findSubmitButton();
-                if (submitBtn && !submitBtn.disabled) {
-                    const label = submitBtn.getAttribute('aria-label') || '';
-                    console.log(`OK Botao Enviar encontrado (label="${label}"), clicando...`);
-                    safeSubmitClick(submitBtn);
-                    submitClicked = true;
-                }
-
-                if (!submitClicked) {
-                    // Fallback: try Enter key on editor
-                    const editor = findEditor();
-                    if (editor) {
-                        console.log('âŒ¨ï¸ Tentando enviar com Enter no editor...');
-                        editor.focus();
-                        editor.dispatchEvent(new KeyboardEvent('keydown', {
-                            bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'
-                        }));
+                        const durationSuccess = await selectVideoDuration(automationState.settings.videoDuration);
+                        console.log(`ðŸ“Š Resultado seleÃ§Ã£o duraÃ§Ã£o (image-to-video): ${durationSuccess ? 'SUCESSO' : 'FALHA'}`);
+                        await sleep(1000);
                     }
-                }
 
-                // ========== STEP 5: Wait for Generation ==========
-                console.log(`â³ Step 5: Aguardando geraÃ§Ã£o de ${genMode}...`);
-                updateOverlay({
-                    status: `Gerando ${genMode}...`,
-                    prompt: `Imagem: ${currentImage.name}`,
-                    index: automationState.currentImageIndex + 1,
-                    total: automationState.imageQueue.length
-                });
+                    // ========== STEP 3.5: Select Resolution ==========
+                    const resolution = automationState.settings?.resolution || '480p';
+                    console.log(`â±ï¸ Step 3.5: Selecionando resoluÃ§Ã£o ${resolution}...`);
+                    updateOverlay({
+                        status: `Configurando resoluÃ§Ã£o ${resolution}...`,
+                        prompt: `Imagem: ${currentImage.name}`,
+                        index: automationState.currentImageIndex + 1,
+                        total: automationState.imageQueue.length
+                    });
+                    await selectResolution(resolution);
+                    await sleep(800);
 
-                if (genMode === 'video') {
-                    const videoOk = await waitAndDownloadVideo(automationState.currentImageIndex, currentImage.name, sectionsBefore);
-                    if (!videoOk) {
-                        throw new Error('VÃ­deo nÃ£o finalizou dentro do tempo esperado.');
+                    // ========== STEP 3.8: Attach -> Animate Image -> Upload ==========
+                    console.log('ðŸ“Ž Step 3.8: Abrindo Anexar > Animar imagem...');
+                    const animateMenuOk = await openAttachAndChooseAnimateImage();
+                    if (!animateMenuOk) {
+                        throw new Error('NÃ£o foi possÃ­vel abrir Anexar e selecionar Animar imagem.');
                     }
-                } else {
-                    const outputCount = automationState.settings?.downloadMultiCount || 4;
-                    await waitAndDownloadImages(automationState.currentImageIndex, currentImage.name, outputCount, sectionsBefore);
-                }
 
-                // ========== STEP 6: Next Image ==========
-                console.log('â­ï¸ AvanÃ§ando para prÃ³xima imagem...');
-                if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
-                automationState.imageToVideoRetries[automationState.currentImageIndex] = 0;
-                automationState.currentImageIndex++;
-                await saveAutomationState();
+                    console.log('ðŸ“¤ Step 3.9: Fazendo upload da imagem...');
+                    console.log(`ðŸ“Š Progresso: ${automationState.currentImageIndex + 1}/${automationState.imageQueue.length} - ${currentImage.name}`);
+                    try {
+                        await uploadImageToGrok(imgData.data, currentImage.name);
+                        console.log('âœ… Upload iniciado no input file');
+                    } catch (uploadError) {
+                        console.error('âŒ Erro no upload:', uploadError);
+                        throw uploadError;
+                    }
 
-                // Sempre voltar para /imagine entre itens (somente lÃ¡ existe o fluxo de upload)
-                const waitDelay = Math.max(3, Math.min(automationState.delay, 10));
-                console.log(`â±ï¸ Aguardando ${waitDelay}s e voltando para /imagine...`);
-                updateOverlay({
-                    status: 'Voltando para /imagine...',
-                    prompt: `Delay: ${waitDelay}s...`,
-                    index: automationState.currentImageIndex,
-                    total: automationState.imageQueue.length
-                });
+                    updateOverlay({
+                        status: 'Aguardando processamento...',
+                        prompt: `Imagem: ${currentImage.name}`,
+                        index: automationState.currentImageIndex + 1,
+                        total: automationState.imageQueue.length
+                    });
+                    await sleep(2200);
 
-                await sleep(waitDelay * 1000);
-                willNavigate = true;
-                window.location.href = 'https://grok.com/imagine';
-                return;
+                    // ========== STEP 4: Submit ==========
+                    console.log('ðŸš€ Step 4: Enviando...');
+                    updateOverlay({
+                        status: 'Enviando para geraÃ§Ã£o...',
+                        prompt: `Imagem: ${currentImage.name}`,
+                        index: automationState.currentImageIndex + 1,
+                        total: automationState.imageQueue.length
+                    });
 
-            } catch (error) {
-                console.error('âŒ Erro:', error);
-                if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
-                const currentIdx = automationState.currentImageIndex;
-                const retries = (automationState.imageToVideoRetries[currentIdx] || 0) + 1;
-                automationState.imageToVideoRetries[currentIdx] = retries;
+                    const sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
 
-                if (retries >= 3) {
-                    console.warn(`âš ï¸ Item ${currentIdx + 1} falhou ${retries}x. Pulando para o prÃ³ximo.`);
-                    automationState.imageToVideoRetries[currentIdx] = 0;
+                    let submitClicked = false;
+                    const submitBtn = findSubmitButton();
+                    if (submitBtn && !submitBtn.disabled) {
+                        const label = submitBtn.getAttribute('aria-label') || '';
+                        console.log(`OK Botao Enviar encontrado (label="${label}"), clicando...`);
+                        safeSubmitClick(submitBtn);
+                        submitClicked = true;
+                    }
+
+                    if (!submitClicked) {
+                        // Fallback: try Enter key on editor
+                        const editor = findEditor();
+                        if (editor) {
+                            console.log('âŒ¨ï¸ Tentando enviar com Enter no editor...');
+                            editor.focus();
+                            editor.dispatchEvent(new KeyboardEvent('keydown', {
+                                bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'
+                            }));
+                        }
+                    }
+
+                    // ========== STEP 5: Wait for Generation ==========
+                    console.log(`â³ Step 5: Aguardando geraÃ§Ã£o de ${genMode}...`);
+                    updateOverlay({
+                        status: `Gerando ${genMode}...`,
+                        prompt: `Imagem: ${currentImage.name}`,
+                        index: automationState.currentImageIndex + 1,
+                        total: automationState.imageQueue.length
+                    });
+
+                    if (genMode === 'video') {
+                        const videoOk = await waitAndDownloadVideo(automationState.currentImageIndex, currentImage.name, sectionsBefore);
+                        if (!videoOk) {
+                            throw new Error('VÃ­deo nÃ£o finalizou dentro do tempo esperado.');
+                        }
+                    } else {
+                        const outputCount = automationState.settings?.downloadMultiCount || 4;
+                        await waitAndDownloadImages(automationState.currentImageIndex, currentImage.name, outputCount, sectionsBefore);
+                    }
+
+                    // ========== STEP 6: Next Image ==========
+                    console.log('â­ï¸ AvanÃ§ando para prÃ³xima imagem...');
+                    if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
+                    automationState.imageToVideoRetries[automationState.currentImageIndex] = 0;
                     automationState.currentImageIndex++;
-                } else {
-                    console.warn(`ðŸ” Repetindo item ${currentIdx + 1} (tentativa ${retries}/3)...`);
-                }
-                await saveAutomationState();
+                    await saveAutomationState();
 
-                console.log('ðŸ”„ Erro no item atual. Voltando para /imagine em 5s...');
-                setTimeout(() => {
+                    // Sempre voltar para /imagine entre itens (somente lÃ¡ existe o fluxo de upload)
+                    const waitDelay = Math.max(3, Math.min(automationState.delay, 10));
+                    console.log(`â±ï¸ Aguardando ${waitDelay}s e voltando para /imagine...`);
+                    updateOverlay({
+                        status: 'Voltando para /imagine...',
+                        prompt: `Delay: ${waitDelay}s...`,
+                        index: automationState.currentImageIndex,
+                        total: automationState.imageQueue.length
+                    });
+
+                    await sleep(waitDelay * 1000);
+                    willNavigate = true;
                     window.location.href = 'https://grok.com/imagine';
-                }, 5000);
-            }
+                    return;
+
+                } catch (error) {
+                    console.error('âŒ Erro:', error);
+                    if (!automationState.imageToVideoRetries) automationState.imageToVideoRetries = {};
+                    const currentIdx = automationState.currentImageIndex;
+                    const retries = (automationState.imageToVideoRetries[currentIdx] || 0) + 1;
+                    automationState.imageToVideoRetries[currentIdx] = retries;
+
+                    if (retries >= 3) {
+                        console.warn(`âš ï¸ Item ${currentIdx + 1} falhou ${retries}x. Pulando para o prÃ³ximo.`);
+                        automationState.imageToVideoRetries[currentIdx] = 0;
+                        automationState.currentImageIndex++;
+                    } else {
+                        console.warn(`ðŸ” Repetindo item ${currentIdx + 1} (tentativa ${retries}/3)...`);
+                    }
+                    await saveAutomationState();
+
+                    console.log('ðŸ”„ Erro no item atual. Voltando para /imagine em 5s...');
+                    setTimeout(() => {
+                        window.location.href = 'https://grok.com/imagine';
+                    }, 5000);
+                }
             } finally {
                 if (!willNavigate) {
                     imageToVideoRunLock = false;
@@ -2981,7 +3014,6 @@
         // Flag para evitar downloads duplicados simultÃ¢neos
         let isDownloadingAllImages = false;
 
-        const FINAL_IMAGE_SRC_MIN_LENGTH = 130000;
 
         // Retorna a Ãšltima seÃ§Ã£o da masonry (mais recente) â€” igual ao .last() da extensÃ£o temp.
         // O Grok cria uma nova seÃ§Ã£o por prompt: #imagine-masonry-section-0, -1, -2...
