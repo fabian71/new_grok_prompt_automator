@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
     'use strict';
 
     if (window.whiskAutomatorLoaded) {
@@ -1141,13 +1141,13 @@
 
             if (actualIndex < 0) actualIndex = 0;
 
-            console.log(`ðŸ“¥ [triggerDownload] type=${type}, actualIndex=${actualIndex}, mode=${automationState.mode}`);
+            console.log(`📥 [triggerDownload] type=${type}, actualIndex=${actualIndex}, mode=${automationState.mode}`);
 
-            // Bloqueio SÃ­ncrono Imediato
+            // Bloqueio Síncrono Imediato
             let preMarkedVideoDownload = false;
             if (type === 'video') {
                 if (automationState.downloadedVideos.has(actualIndex)) {
-                    console.log(`âœ… [triggerDownload] JÃ¡ marcado como baixado para Ã­ndice ${actualIndex}, abortando.`);
+                    console.log(`✅ [triggerDownload] Já marcado como baixado para índice ${actualIndex}, abortando.`);
                     return;
                 }
                 automationState.downloadedVideos.add(actualIndex);
@@ -1155,17 +1155,37 @@
                 saveAutomationState();
             }
 
+            // ─── LIMPEZA DO NOME DO ARQUIVO ───
             let promptText = 'prompt';
             if (automationState.mode === 'image-to-video' && automationState.imageQueue) {
                 const imgData = automationState.imageQueue[actualIndex];
-                if (imgData) promptText = imgData.name;
+                if (imgData) {
+                    promptText = imgData.name;
+                }
             } else if (automationState.prompts) {
                 promptText = automationState.prompts[actualIndex] || 'prompt';
             }
 
-            const safePromptName = promptText.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '').substring(0, 50);
+            let nameForFilename = promptText;
+            if (automationState.mode === 'image-to-video') {
+                // Remover extensão (.jpg, .png, .mp4, etc)
+                nameForFilename = nameForFilename.replace(/\.[a-z0-9]+$/i, '');
+                // Remover prefixos numéricos e separadores do início (ex: "0_", "12-", "008", "36_008")
+                nameForFilename = nameForFilename.replace(/^[\d_\-]+/, '');
+                // Remover sufixos de letras individuais (ex: "_a", "_b")
+                nameForFilename = nameForFilename.replace(/_[a-z]$/i, '');
+            }
+
+            const safePromptName = nameForFilename
+                .replace(/[\s\-]+/g, '_') // Espaços e hífens viram underscore
+                .replace(/[^a-zA-Z0-9_]/g, '')
+                .replace(/_+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .substring(0, 50) || 'media';
+
             const timestamp = Date.now();
             const ext = type === 'video' ? 'mp4' : 'png';
+            // Index 1-based para o vídeo (1_, 2_, etc)
             const filename = `${actualIndex + 1}_${safePromptName}_${timestamp}.${ext}`;
 
             const isRuntimeAvailable = () => {
@@ -1753,7 +1773,19 @@
 
             const now = new Date();
             const folderName = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            const safePromptName = (prompt || 'video').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '').substring(0, 50);
+            
+            let nameForPrefix = prompt || 'video';
+            if (automationState.mode === 'image-to-video') {
+                nameForPrefix = nameForPrefix.replace(/\.[a-z0-9]+$/i, '').replace(/^[\d_\-]+/, '').replace(/_[a-z]$/i, '');
+            }
+
+            const safePromptName = nameForPrefix
+                .replace(/[\s\-]+/g, '_')
+                .replace(/[^a-zA-Z0-9_]/g, '')
+                .replace(/_+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .substring(0, 50) || 'video';
+
             try {
                 chrome.runtime.sendMessage({ action: 'SETUP_DOWNLOAD', folder: folderName, prefix: `${promptIndex + 1}_${safePromptName}_` });
             } catch (e) { }
