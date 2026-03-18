@@ -2639,7 +2639,6 @@
                         index: automationState.currentImageIndex + 1,
                         total: automationState.imageQueue.length
                     });
-                    await sleep(2200);
 
                     // ========== STEP 4: Submit ==========
                     console.log('ðŸš€ Step 4: Enviando...');
@@ -2653,7 +2652,16 @@
                     const sectionsBefore = document.querySelectorAll('[id^="imagine-masonry-section"]').length;
 
                     let submitClicked = false;
-                    const submitBtn = findSubmitButton();
+                    let submitBtn = null;
+                    console.log('⏳ Aguardando botão enviar habilitar ou imagem processar...');
+                    for (let i = 0; i < 30; i++) {
+                        submitBtn = findSubmitButton();
+                        if (submitBtn && !submitBtn.disabled) {
+                            break;
+                        }
+                        await sleep(500);
+                    }
+
                     if (submitBtn && !submitBtn.disabled) {
                         const label = submitBtn.getAttribute('aria-label') || '';
                         console.log(`OK Botao Enviar encontrado (label="${label}"), clicando...`);
@@ -2668,7 +2676,8 @@
                             console.log('âŒ¨ï¸ Tentando enviar com Enter no editor...');
                             editor.focus();
                             editor.dispatchEvent(new KeyboardEvent('keydown', {
-                                bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                                bubbles: true, cancelable: true
                             }));
                         }
                     }
