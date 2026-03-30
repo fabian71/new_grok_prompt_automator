@@ -317,7 +317,7 @@
                 border: '1px solid rgba(56, 189, 248, 0.35)',
                 color: '#7dd3fc'
             });
-            statusBadge.textContent = 'v3.1';
+            statusBadge.textContent = 'v3.2';
             rightSection.appendChild(statusBadge);
 
             // BotÃ£o fechar (X)
@@ -701,15 +701,12 @@
         function forceClick(element) {
             if (!element) return;
 
-            // Ensure visibility
-            element.style.pointerEvents = 'auto';
-            element.style.visibility = 'visible';
-            element.style.opacity = '1';
-            element.style.display = 'block';
-
-            if (element.scrollIntoView) {
-                element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
-            }
+            // Tentativa suave de garantir visibilidade apenas se necessário
+            try {
+                if (element.scrollIntoView) {
+                    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+                }
+            } catch (e) {}
 
             const events = [
                 'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
@@ -725,15 +722,17 @@
             const y = rect.top + rect.height / 2;
 
             events.forEach(type => {
-                const event = new MouseEvent(type, {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    clientX: x,
-                    clientY: y,
-                    buttons: 1
-                });
-                element.dispatchEvent(event);
+                try {
+                    const event = new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: x,
+                        clientY: y,
+                        buttons: 1
+                    });
+                    element.dispatchEvent(event);
+                } catch (e) {}
             });
 
             try {
@@ -2056,7 +2055,7 @@
             for (const selector of selectors) {
                 const editor = document.querySelector(selector);
                 if (editor) {
-                    console.log('âœ… Editor encontrado:', selector);
+                    console.log('✅ Editor encontrado:', selector);
                     return editor;
                 }
             }
@@ -2066,181 +2065,253 @@
 
         // Helper: Upload image to Grok via file input
         async function uploadImageToGrok(imageData, filename) {
-            console.log('ðŸ“¤ Procurando input[type="file"] na pÃ¡gina...');
-
-            // Find file input - try multiple strategies
+            console.log('📁 Procurando input[type="file"] na página...');
             let fileInput = document.querySelector('input[type="file"]');
-
             if (!fileInput) {
-                // Try to find in the query-bar container
                 const queryBar = document.querySelector('.query-bar') || document.querySelector('div[class*="query"]');
-                if (queryBar) {
-                    fileInput = queryBar.querySelector('input[type="file"]');
-                }
+                if (queryBar) fileInput = queryBar.querySelector('input[type="file"]');
             }
-
             if (!fileInput) {
-                // Try to find by looking for hidden inputs anywhere
                 const allInputs = document.querySelectorAll('input[type="file"]');
-                if (allInputs.length > 0) {
-                    fileInput = allInputs[0];
-                }
+                if (allInputs.length > 0) fileInput = allInputs[0];
             }
-
-            // If still not found, we might need to click the attach button first to create it
             if (!fileInput) {
-                console.log('âš ï¸ Input de arquivo nÃ£o encontrado, tentando clicar no botÃ£o Anexar...');
-                const attachBtn = document.querySelector('button[aria-label="Anexar"]') ||
-                    document.querySelector('button svg path[d*="M10 9V15"]')?.closest('button');
-
+                console.log('⚠️ Input de arquivo não encontrado, tentando clicar no botão Anexar...');
+                const attachBtn = document.querySelector('button[aria-label*="Anexar"]') || 
+                                document.querySelector('button[aria-label*="Upload"]') ||
+                                document.querySelector('button[aria-label*="Attach"]');
+                                
                 if (attachBtn) {
                     forceClick(attachBtn);
                     await sleep(1000);
-
-                    // Try to find the menu item "Carregar um arquivo" and click it
-                    const menuItems = document.querySelectorAll('[role="menuitem"]');
-                    for (const item of menuItems) {
-                        const svg = item.querySelector('svg');
-                        if (svg) {
-                            const paths = svg.querySelectorAll('path');
-                            const pathData = Array.from(paths).map(p => p.getAttribute('d') || '').join(' ');
-                            // Look for file icon (paths with M11 20H8 and M21 18 are file icons)
-                            if (pathData.includes('M11 20') || pathData.includes('M20 8V11')) {
-                                console.log('âœ… Menu item de upload encontrado, clicando...');
-                                forceClick(item);
-                                await sleep(1500);
-                                break;
-                            }
-                        }
-                    }
-
-                    // Now try to find the file input again
                     fileInput = document.querySelector('input[type="file"]');
                 }
             }
-
-            if (!fileInput) {
-                throw new Error('Input de arquivo nÃ£o encontrado na pÃ¡gina');
-            }
-
-            console.log('âœ… Input de arquivo encontrado:', fileInput);
-
-            // Convert base64 to File
-            console.log('ðŸ’¾ Convertendo base64 para File...');
+            if (!fileInput) throw new Error('Input de arquivo não encontrado na página');
             const file = dataURLtoFile(imageData, filename);
-
-            // Create DataTransfer and add file
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
-
-            // Set files on input
             fileInput.files = dataTransfer.files;
-
-            // Dispatch change event to trigger upload
-            console.log('ðŸš€ Disparando evento change no input...');
-            const changeEvent = new Event('change', { bubbles: true });
-            fileInput.dispatchEvent(changeEvent);
-
-            // Also dispatch input event for React compatibility
-            const inputEvent = new Event('input', { bubbles: true });
-            Object.defineProperty(inputEvent, 'target', { writable: false, value: fileInput });
-            fileInput.dispatchEvent(inputEvent);
-
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
             return true;
         }
 
-        // Helper: Open attach menu and pick "Animate image" action (language-agnostic)
+        async function openAttachAndChooseAnimateImageLegacy() {
+            const findAttachButton = () => {
+                const editor = findEditor();
+                const scope = editor?.closest('form, [class*="query"], [class*="composer"], [class*="chat"]') || document;
+                const iconPathFragments = [
+                    'M19 17H22V19H19V22H17V19H14V17H17V14H19V17Z',
+                    'M6 6L18 18M18 6L6 18', // O "X" que vira "+" via rotação de 45deg
+                    'M12 5V19M5 12H19' // Um "+" real
+                ];
+                
+                // 1. Tentar por ÍCONE no scope do editor
+                const byIcon = Array.from(scope.querySelectorAll('button')).find(btn => 
+                    iconPathFragments.some(frag => !!btn.querySelector(`path[d*="${frag}"]`)) && isVisible(btn) && !btn.disabled
+                );
+                if (byIcon) return byIcon;
+                
+                // 2. Tentar por LABEL no scope do editor
+                const byLabel = Array.from(scope.querySelectorAll('button')).find(btn => {
+                    const label = normalizeText(btn.getAttribute('aria-label') || btn.getAttribute('title') || '');
+                    return (label.includes('anex') || label.includes('attach') || label.includes('upload')) && isVisible(btn) && !btn.disabled;
+                });
+                if (byLabel) return byLabel;
+
+                // 3. Busca Global como fallback
+                return Array.from(document.querySelectorAll('button')).find(btn => {
+                    const label = normalizeText(btn.getAttribute('aria-label') || btn.getAttribute('title') || '');
+                    const hasIcon = iconPathFragments.some(frag => !!btn.querySelector(`path[d*="${frag}"]`));
+                    return (hasIcon || label.includes('anex') || label.includes('upload')) && isVisible(btn) && !btn.disabled;
+                }) || null;
+            };
+
+            const findAnimateItem = (menu) => {
+                // Procurar itens de menu ou botões dentro do menu aberto
+                const items = Array.from(menu.querySelectorAll('[role="menuitem"], button, div[role="button"]'));
+                if (!items.length) return null;
+                const scored = items.map(item => {
+                    const text = normalizeText(item.textContent || '');
+                    let score = 0;
+                    if ((text.includes('anim') && text.includes('imag')) || (text.includes('video') && text.includes('transform'))) score += 10;
+                    if (text.includes('animar')) score += 5;
+                    if (item.querySelector('path[d*="M14.5 15.7158"]')) score += 8;
+                    return { item, score };
+                }).sort((a, b) => b.score - a.score);
+                return scored[0]?.score > 0 ? scored[0].item : null;
+            };
+
+            // Detectar se a "tray" (área de upload) já está visível
+            const isTrayAlreadyOpen = () => {
+                // Procurar em qualquer elemento visível, pois o Grok agora usa divs grandes para o drag-and-drop
+                return Array.from(document.querySelectorAll('button, div, label, span')).some(el => {
+                    const txt = normalizeText(el.textContent || '');
+                    return (txt.includes('upload or drop') || txt.includes('carregar ou soltar') || txt.includes('drag and drop')) && isVisible(el);
+                });
+            };
+
+            for (let attempt = 0; attempt < 4; attempt++) {
+                if (isTrayAlreadyOpen()) {
+                    console.log('✅ Tray de upload já detectada como aberta.');
+                    return true;
+                }
+
+                const attachBtn = findAttachButton();
+                if (!attachBtn) { 
+                    console.log(`⚠️ Botão Anexar não encontrado (tentativa ${attempt+1}/4)`);
+                    await sleep(500); 
+                    continue; 
+                }
+
+                console.log('🖱️ Clicando no botão Anexar...');
+                forceClick(attachBtn); 
+                
+                for (let poll = 0; poll < 16; poll++) {
+                    await sleep(250);
+                    
+                    // Estratégia A: Menu de contexto
+                    let menu = document.querySelector('[role="menu"][data-state="open"], [data-radix-menu-content][data-state="open"]');
+                    if (menu) {
+                        const animateItem = findAnimateItem(menu);
+                        if (animateItem) { 
+                            console.log('✅ Item "Animar imagem" encontrado no menu!');
+                            forceClick(animateItem); 
+                            await sleep(800); 
+                            return true; 
+                        }
+                    }
+                    
+                    // Estratégia B: Detectar se a tray abriu (direto ou após clique no menu)
+                    if (isTrayAlreadyOpen()) {
+                        console.log('✅ Tray de upload detectada!');
+                        return true;
+                    }
+                }
+            }
+            console.warn('⚠️ Falha ao abrir menu de anexo ou detectar tray');
+            return false;
+        }
         async function openAttachAndChooseAnimateImage() {
             const findAttachButton = () => {
                 const editor = findEditor();
                 const scope = editor?.closest('form, [class*="query"], [class*="composer"], [class*="chat"]') || document;
+                const iconPathFragments = [
+                    'M19 17H22V19H19V22H17V19H14V17H17V14H19V17Z',
+                    'M6 6L18 18M18 6L6 18',
+                    'M12 5V19M5 12H19'
+                ];
 
-                // Prefer attach button by stable icon path (plus inside image icon)
-                const iconPathFragment = 'M19 17H22V19H19V22H17V19H14V17H17V14H19V17Z';
-                const byIcon = Array.from(scope.querySelectorAll('button[aria-haspopup="menu"]')).find(btn =>
-                    !!btn.querySelector(`path[d*="${iconPathFragment}"]`) && isVisible(btn) && !btn.disabled
-                );
-                if (byIcon) return byIcon;
+                const scoreButton = (btn) => {
+                    if (!btn || !isVisible(btn) || btn.disabled) return -1;
 
-                // Fallback by aria-label in common languages
-                const byLabel = Array.from(scope.querySelectorAll('button[aria-haspopup="menu"]')).find(btn => {
-                    const label = normalizeText(btn.getAttribute('aria-label') || '');
-                    return (
-                        label.includes('anex') || label.includes('attach') || label.includes('upload') ||
-                        label.includes('adjuntar') || label.includes('joindre') || label.includes('anhang')
-                    ) && isVisible(btn) && !btn.disabled;
+                    const label = normalizeText(btn.getAttribute('aria-label') || btn.getAttribute('title') || '');
+                    const text = normalizeText(btn.textContent || '');
+                    const parentText = normalizeText(btn.parentElement?.textContent || '');
+                    const hasIcon = iconPathFragments.some(frag => !!btn.querySelector(`path[d*="${frag}"]`));
+                    const rect = btn.getBoundingClientRect();
+                    let score = 0;
+
+                    if (label === 'upload') score += 100;
+                    if (label.includes('upload')) score += 60;
+                    if (label.includes('anex') || label.includes('attach')) score += 45;
+                    if (text.includes('upload') || text.includes('anex') || text.includes('attach')) score += 25;
+                    if (hasIcon) score += 20;
+                    if (rect.width >= 32 && rect.height >= 32) score += 8;
+                    if (rect.left < window.innerWidth * 0.35) score += 8;
+                    if (rect.top > window.innerHeight * 0.55) score += 12;
+
+                    if (btn.closest('[role="dialog"], [aria-modal="true"]')) score -= 15;
+                    if (parentText.includes('upload or drop') || parentText.includes('carregar ou soltar')) score -= 20;
+                    if (label.includes('close') || label.includes('fechar')) score -= 30;
+
+                    return score;
+                };
+
+                const candidates = Array.from(new Set([
+                    ...scope.querySelectorAll('button'),
+                    ...document.querySelectorAll('button')
+                ]))
+                    .map(btn => ({ btn, score: scoreButton(btn) }))
+                    .filter(item => item.score > 0)
+                    .sort((a, b) => b.score - a.score);
+
+                if (!candidates.length) return null;
+
+                const best = candidates[0];
+                console.log('📎 [openAttachAndChooseAnimateImage] Candidato escolhido:', {
+                    label: best.btn.getAttribute('aria-label') || '',
+                    text: (best.btn.textContent || '').trim().slice(0, 60),
+                    score: best.score
                 });
-                if (byLabel) return byLabel;
-
-                return null;
+                return best.btn;
             };
 
             const findAnimateItem = (menu) => {
-                const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+                const items = Array.from(menu.querySelectorAll('[role="menuitem"], button, div[role="button"]'));
                 if (!items.length) return null;
 
                 const scored = items.map(item => {
                     const text = normalizeText(item.textContent || '');
                     let score = 0;
-
-                    if (
-                        (text.includes('anim') && (text.includes('imag') || text.includes('image') || text.includes('imagen') || text.includes('imagem'))) ||
-                        (text.includes('video') && text.includes('transform'))
-                    ) score += 10;
-
-                    // Path fragment from your provided "Animar imagem" menu icon
+                    if ((text.includes('anim') && text.includes('imag')) || (text.includes('video') && text.includes('transform'))) score += 10;
+                    if (text.includes('animar')) score += 5;
                     if (item.querySelector('path[d*="M14.5 15.7158"]')) score += 8;
-
-                    // Usually this item has title + subtitle
-                    if (item.querySelectorAll('span').length >= 2) score += 2;
-
                     return { item, score };
                 }).sort((a, b) => b.score - a.score);
 
-                if (scored[0]?.score > 0) return scored[0].item;
-                return null;
+                return scored[0]?.score > 0 ? scored[0].item : null;
             };
 
+            const isTrayAlreadyOpen = () => Array.from(document.querySelectorAll('button, div, label, span')).some(el => {
+                const txt = normalizeText(el.textContent || '');
+                return (txt.includes('upload or drop') || txt.includes('carregar ou soltar') || txt.includes('drag and drop')) && isVisible(el);
+            });
+
+            const hasFileInputReady = () => Array.from(document.querySelectorAll('input[type="file"]'))
+                .some(input => isVisible(input) || !!input.closest('form, [class*="query"], [class*="composer"], [role="dialog"]'));
+
             for (let attempt = 0; attempt < 4; attempt++) {
+                if (isTrayAlreadyOpen() || hasFileInputReady()) {
+                    console.log('✅ Tray/input de upload já detectado como aberto.');
+                    return true;
+                }
+
                 const attachBtn = findAttachButton();
                 if (!attachBtn) {
-                    await sleep(350);
+                    console.log(`⚠️ Botão Anexar não encontrado (tentativa ${attempt + 1}/4)`);
+                    await sleep(500);
                     continue;
                 }
 
+                console.log('🖱️ Clicando no botão Anexar...');
                 forceClick(attachBtn);
-                await sleep(450);
 
-                const triggerId = attachBtn.id;
-                let menu = null;
-                if (triggerId) {
-                    menu = document.querySelector(`[role="menu"][data-state="open"][aria-labelledby="${triggerId}"]`);
-                }
-                if (!menu) {
-                    menu = document.querySelector('[role="menu"][data-state="open"]');
-                }
-                if (!menu) {
-                    await sleep(300);
-                    continue;
-                }
-
-                const animateItem = findAnimateItem(menu);
-                if (!animateItem) {
+                for (let poll = 0; poll < 16; poll++) {
                     await sleep(250);
-                    continue;
-                }
 
-                forceClick(animateItem);
-                await sleep(600);
-                console.log('âœ… AÃ§Ã£o de animar imagem selecionada no menu de anexo.');
-                return true;
+                    const menu = document.querySelector('[role="menu"][data-state="open"], [data-radix-menu-content][data-state="open"]');
+                    if (menu) {
+                        const animateItem = findAnimateItem(menu);
+                        if (animateItem) {
+                            console.log('✅ Item "Animar imagem" encontrado no menu!');
+                            forceClick(animateItem);
+                            await sleep(800);
+                            return true;
+                        }
+                    }
+
+                    if (isTrayAlreadyOpen() || hasFileInputReady()) {
+                        console.log('✅ Tray/input de upload detectado!');
+                        return true;
+                    }
+                }
             }
 
-            console.warn('âš ï¸ NÃ£o foi possÃ­vel selecionar a aÃ§Ã£o de animar imagem no menu de anexo.');
+            console.warn('⚠️ Falha ao abrir menu de anexo ou detectar tray');
             return false;
         }
 
-        // Helper: Select Video Duration
         async function selectVideoDuration(targetDuration) {
             const durationMap = {
                 '5s': ['5', '5s', '5 seconds'],
