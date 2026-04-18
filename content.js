@@ -317,7 +317,7 @@
                 border: '1px solid rgba(56, 189, 248, 0.35)',
                 color: '#7dd3fc'
             });
-            statusBadge.textContent = 'v3.3';
+            statusBadge.textContent = 'v3.4';
             rightSection.appendChild(statusBadge);
 
             // BotÃ£o fechar (X)
@@ -2635,6 +2635,10 @@
                     } else {
                         console.log('â„¹ï¸ Nenhum prompt para inserir (campo vazio)');
                     }
+
+                    // Garantir que o modo Vídeo esteja selecionado na nova UI (radiogroup)
+                    await selectGenerationMode('video');
+                    await sleep(500);
 
                     // ========== STEP 1: Select Aspect Ratio (Randomized or Fixed) ==========
                     let currentRatio = automationState.settings?.fixedRatio || '3:2';

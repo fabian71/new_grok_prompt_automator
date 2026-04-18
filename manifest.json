@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Grok Prompt Automator",
-  "version": "3.3",
+  "version": "3.4",
   "description": "Automatiza o envio de prompts para o Grok Imagine com lista personalizada e controle de delay",
   "permissions": [
     "storage",
